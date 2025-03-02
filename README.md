@@ -188,6 +188,8 @@ DELETE /api/client/:id
 - Database GORM ORM orqali boshqariladi
 - Clientlar uchun "normal" va "vip" turlari mavjud
 - Clientlar uchun amal qilish muddati belgilanishi mumkin (soniyalarda)
+- Muddati o'tgan clientlar avtomatik ravishda o'chiriladi va Wireguard konfiguratsiyasidan olib tashlanadi
+- Muddati o'tgan clientlarni tekshirish har 15 daqiqada amalga oshiriladi
 
 ## Xavfsizlik eslatmasi
 

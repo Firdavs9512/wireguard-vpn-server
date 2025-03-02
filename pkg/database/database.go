@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"wireguard-vpn-client-creater/pkg/models"
+	"wireguard-vpn-client-creater/pkg/wireguard"
 )
 
 var DB *gorm.DB
@@ -98,24 +99,32 @@ func CheckExpiredClients() ([]models.WireguardClient, error) {
 	return expiredClients, err
 }
 
-// DeactivateExpiredClients - Muddati o'tgan clientlarni deaktivatsiya qilish
-func DeactivateExpiredClients() error {
+// DeleteExpiredClients - Muddati o'tgan clientlarni o'chirish
+func DeleteExpiredClients() error {
 	// Muddati o'tgan clientlarni topish
 	expiredClients, err := CheckExpiredClients()
 	if err != nil {
 		return err
 	}
 
-	// Har bir muddati o'tgan clientni deaktivatsiya qilish
+	// Har bir muddati o'tgan clientni o'chirish
 	for _, client := range expiredClients {
-		log.Printf("Deactivating expired client: %d - %s (expired at: %s)",
+		log.Printf("O'chirish: muddati o'tgan client: %d - %s (muddati tugagan: %s)",
 			client.ID, client.Description, client.ExpiresAt.Format(time.RFC3339))
 
-		// Clientni deaktivatsiya qilish
-		if err := DeactivateClient(client.ID); err != nil {
-			log.Printf("Error deactivating client %d: %v", client.ID, err)
+		// Wireguard konfiguratsiyasidan peer ni o'chirish
+		if err := wireguard.RemovePeerFromServer(client.PublicKey); err != nil {
+			log.Printf("Xatolik: Wireguard konfiguratsiyasidan client %d ni o'chirishda: %v", client.ID, err)
 			continue
 		}
+
+		// Databasedan o'chirish
+		if err := DB.Delete(&client).Error; err != nil {
+			log.Printf("Xatolik: Databasedan client %d ni o'chirishda: %v", client.ID, err)
+			continue
+		}
+
+		log.Printf("Client %d muvaffaqiyatli o'chirildi", client.ID)
 	}
 
 	return nil

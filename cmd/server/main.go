@@ -17,7 +17,7 @@ func startExpirationChecker() {
 			select {
 			case <-ticker.C:
 				log.Println("Muddati o'tgan clientlarni tekshirish...")
-				if err := database.DeactivateExpiredClients(); err != nil {
+				if err := database.DeleteExpiredClients(); err != nil {
 					log.Printf("Muddati o'tgan clientlarni tekshirishda xatolik: %v", err)
 				}
 			}
@@ -36,7 +36,7 @@ func main() {
 	startExpirationChecker()
 
 	// Dastur ishga tushganda bir marta tekshirish
-	if err := database.DeactivateExpiredClients(); err != nil {
+	if err := database.DeleteExpiredClients(); err != nil {
 		log.Printf("Muddati o'tgan clientlarni tekshirishda xatolik: %v", err)
 	}
 
