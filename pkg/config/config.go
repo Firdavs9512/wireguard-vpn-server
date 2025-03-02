@@ -9,4 +9,7 @@ const (
 	InterfaceName       = "wg0"
 	ServerPublicKeyPath = "/etc/wireguard/server_public.key"
 	ServerIP            = "192.168.1.151"
+
+	// Database konfiguratsiyasi
+	DatabasePath = "./data/wireguard.db"
 )

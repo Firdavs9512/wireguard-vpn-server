@@ -132,3 +132,22 @@ func GeneratePresharedKey() (string, error) {
 	presharedKey := strings.TrimSpace(string(presharedKeyBytes))
 	return presharedKey, nil
 }
+
+// RemovePeerFromServer - Server konfiguratsiyasidan peerni o'chirish
+func RemovePeerFromServer(publicKey string) error {
+	// wg-quick orqali peerni o'chirish
+	cmd := exec.Command("wg", "set", config.InterfaceName, "peer", publicKey, "remove")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("peerni o'chirishda xatolik: %v, output: %s", err, string(output))
+	}
+
+	// O'zgarishlarni saqlash
+	cmd = exec.Command("bash", "-c", fmt.Sprintf("wg-quick save %s", config.InterfaceName))
+	output, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("konfiguratsiyani saqlashda xatolik: %v, output: %s", err, string(output))
+	}
+
+	return nil
+}

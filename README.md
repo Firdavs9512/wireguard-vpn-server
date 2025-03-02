@@ -8,6 +8,8 @@ Bu loyiha Golang yordamida Wireguard VPN clientlarini yaratish uchun API server 
 - Har bir client uchun unikal IP manzil va kalitlar yaratish
 - Wireguard konfiguratsiya faylini va uning ma'lumotlarini JSON formatida qaytarish
 - Server konfiguratsiyasiga yangi peerlarni avtomatik qo'shish
+- Clientlarni SQLite databasega saqlash va boshqarish
+- Clientlarni ko'rish, o'chirish va boshqarish uchun API endpointlar
 
 ## Talablar
 
@@ -66,6 +68,14 @@ Bu script API ga so'rov yuborib, natijani tekshiradi va client konfiguratsiyasin
 POST /api/client
 ```
 
+**Request body (ixtiyoriy):**
+
+```json
+{
+  "description": "Client tavsifi"
+}
+```
+
 **Javob:**
 
 ```json
@@ -82,11 +92,90 @@ POST /api/client
 }
 ```
 
+### Barcha clientlarni olish
+
+**So'rov:**
+
+```
+GET /api/clients
+```
+
+**Javob:**
+
+```json
+[
+  {
+    "ID": 1,
+    "CreatedAt": "2023-03-01T12:00:00Z",
+    "UpdatedAt": "2023-03-01T12:00:00Z",
+    "DeletedAt": null,
+    "public_key": "CLIENT_PUBLIC_KEY",
+    "private_key": "CLIENT_PRIVATE_KEY",
+    "preshared_key": "PRESHARED_KEY",
+    "address": "10.0.0.X/32",
+    "endpoint": "SERVER_IP:51820",
+    "dns": "1.1.1.1, 8.8.8.8",
+    "allowed_ips": "0.0.0.0/0, ::/0",
+    "config_text": "...",
+    "last_connected": "2023-03-01T12:00:00Z",
+    "description": "Client tavsifi",
+    "active": true
+  }
+]
+```
+
+### Client ma'lumotlarini olish
+
+**So'rov:**
+
+```
+GET /api/client/:id
+```
+
+**Javob:**
+
+```json
+{
+  "ID": 1,
+  "CreatedAt": "2023-03-01T12:00:00Z",
+  "UpdatedAt": "2023-03-01T12:00:00Z",
+  "DeletedAt": null,
+  "public_key": "CLIENT_PUBLIC_KEY",
+  "private_key": "CLIENT_PRIVATE_KEY",
+  "preshared_key": "PRESHARED_KEY",
+  "address": "10.0.0.X/32",
+  "endpoint": "SERVER_IP:51820",
+  "dns": "1.1.1.1, 8.8.8.8",
+  "allowed_ips": "0.0.0.0/0, ::/0",
+  "config_text": "...",
+  "last_connected": "2023-03-01T12:00:00Z",
+  "description": "Client tavsifi",
+  "active": true
+}
+```
+
+### Clientni o'chirish
+
+**So'rov:**
+
+```
+DELETE /api/client/:id
+```
+
+**Javob:**
+
+```json
+{
+  "message": "Client muvaffaqiyatli o'chirildi"
+}
+```
+
 ## Texnik tafsilotlar
 
 - Server konfiguratsiyasiga yangi peerlar `wg` va `wg-quick` buyruqlari orqali qo'shiladi
-- Har bir client uchun unikal IP manzil 10.0.0.2 - 10.0.0.251 oralig'ida generatsiya qilinadi
-- Server interfeysi nomi `/etc/wireguard/` papkasidagi birinchi `.conf` faylidan olinadi
+- Har bir client uchun unikal IP manzil 10.7.0.2 - 10.7.0.251 oralig'ida generatsiya qilinadi
+- Client ma'lumotlari SQLite databaseda saqlanadi (`./data/wireguard.db`)
+- Database GORM ORM orqali boshqariladi
 
 ## Xavfsizlik eslatmasi
 
