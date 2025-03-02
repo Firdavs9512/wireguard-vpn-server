@@ -54,6 +54,18 @@ func main() {
 		log.Fatalf("Database initializatsiyasida xatolik: %v", err)
 	}
 
+	// IP bloklash tizimini ishga tushirish
+	if config.Config.Security.IPBlocker.Enabled {
+		if err := api.InitIPBlocker(); err != nil {
+			log.Fatalf("IP bloklash tizimini ishga tushirishda xatolik: %v", err)
+		}
+		log.Printf("IP bloklash tizimi ishga tushirildi. Maksimal urinishlar: %d, Bloklash muddati: %d minut",
+			config.Config.Security.IPBlocker.MaxAttempts,
+			config.Config.Security.IPBlocker.BlockDuration)
+	} else {
+		log.Println("IP bloklash tizimi o'chirilgan")
+	}
+
 	// Muddati o'tgan clientlarni tekshirish schedulerini ishga tushirish
 	startExpirationChecker()
 

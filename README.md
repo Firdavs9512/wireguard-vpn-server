@@ -375,11 +375,37 @@ GET /api/clients/traffic
   - Odam o'qiy oladigan formatdagi ma'lumotlar (MB, GB kabi)
   - Umumiy traffic (qabul qilingan + yuborilgan)
 
-## Xavfsizlik eslatmasi
+## Xavfsizlik
 
-Bu dastur server konfiguratsiyasini o'zgartirish uchun root huquqlariga ega bo'lishi kerak. Ishlab chiqarish muhitida qo'shimcha xavfsizlik choralarini ko'rish tavsiya etiladi. 
+Dastur quyidagi xavfsizlik mexanizmlarini taqdim etadi:
 
-Parametrlar:
-- `description` - Client tavsifi (majburiy)
-- `life_time` - Clientning amal qilish muddati (soniyalarda). 0 qiymati cheksiz muddatni bildiradi (ixtiyoriy, standart qiymati: 0)
-- `type` - Client turi: "normal" yoki "vip" (ixtiyoriy, standart qiymati: "normal") 
+### API Token autentifikatsiyasi
+
+Barcha API so'rovlari `Authorization` headerida token bilan yuborilishi kerak:
+
+```
+Authorization: Bearer <token>
+```
+
+Token konfiguratsiya faylida `api.token` maydonida ko'rsatilgan.
+
+### IP bloklash tizimi
+
+Dastur xato token bilan API so'rovlarini yuborgan IP manzillarni bloklash imkoniyatini taqdim etadi. Bu mexanizm quyidagicha ishlaydi:
+
+1. Agar foydalanuvchi belgilangan maksimal urinishlar sonidan ko'p marta xato token bilan so'rov yuborsa, uning IP manzili ma'lum vaqtga bloklanadi.
+2. Bloklangan IP manzildan kelgan barcha so'rovlar rad etiladi va bloklash muddati tugaguncha 429 (Too Many Requests) xatolik kodi qaytariladi.
+3. Barcha muvaffaqiyatsiz urinishlar va bloklashlar log fayliga yoziladi.
+
+IP bloklash tizimi konfiguratsiyasi:
+
+```yaml
+security:
+  ip_blocker:
+    enabled: true                    # IP bloklash tizimini yoqish/o'chirish
+    max_attempts: 3                  # Maksimal urinishlar soni
+    block_duration: 60               # Bloklash muddati (minutlarda)
+    log_file_path: "./logs/auth_failures.log"  # Log fayli yo'li
+```
+
+Standart konfiguratsiyada, 3 marta xato token bilan so'rov yuborgan IP manzil 1 soatga bloklanadi. 

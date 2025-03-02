@@ -14,6 +14,7 @@ type Configuration struct {
 	API       APIConfig       `yaml:"api"`
 	Wireguard WireguardConfig `yaml:"wireguard"`
 	Database  DatabaseConfig  `yaml:"database"`
+	Security  SecurityConfig  `yaml:"security"`
 }
 
 // ServerConfig - server konfiguratsiyasi
@@ -41,6 +42,19 @@ type WireguardConfig struct {
 // DatabaseConfig - Database konfiguratsiyasi
 type DatabaseConfig struct {
 	Path string `yaml:"path"`
+}
+
+// SecurityConfig - Xavfsizlik konfiguratsiyasi
+type SecurityConfig struct {
+	IPBlocker IPBlockerConfig `yaml:"ip_blocker"`
+}
+
+// IPBlockerConfig - IP bloklash konfiguratsiyasi
+type IPBlockerConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	MaxAttempts   int    `yaml:"max_attempts"`
+	BlockDuration int    `yaml:"block_duration"` // Minutlarda
+	LogFilePath   string `yaml:"log_file_path"`
 }
 
 // Config - global konfiguratsiya o'zgaruvchisi
@@ -85,6 +99,14 @@ func CreateDefaultConfig(configPath string) error {
 		},
 		Database: DatabaseConfig{
 			Path: "./data/wireguard.db",
+		},
+		Security: SecurityConfig{
+			IPBlocker: IPBlockerConfig{
+				Enabled:       true,
+				MaxAttempts:   3,
+				BlockDuration: 60, // 60 minut (1 soat)
+				LogFilePath:   "./logs/auth_failures.log",
+			},
 		},
 	}
 

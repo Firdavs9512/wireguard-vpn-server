@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -12,15 +13,70 @@ import (
 	"wireguard-vpn-client-creater/pkg/config"
 	"wireguard-vpn-client-creater/pkg/database"
 	"wireguard-vpn-client-creater/pkg/models"
+	"wireguard-vpn-client-creater/pkg/security"
 	"wireguard-vpn-client-creater/pkg/wireguard"
 )
+
+// Global IP blocker
+var ipBlocker *security.IPBlocker
+
+// InitIPBlocker - IP bloklash tizimini ishga tushirish
+func InitIPBlocker() error {
+	// Konfiguratsiyadan IP bloklash sozlamalarini olish
+	ipBlockerConfig := config.Config.Security.IPBlocker
+
+	// Agar IP bloklash o'chirilgan bo'lsa, hech narsa qilmaslik
+	if !ipBlockerConfig.Enabled {
+		return nil
+	}
+
+	// Log fayli uchun papkani yaratish
+	logDir := strings.Split(ipBlockerConfig.LogFilePath, "/")
+	if len(logDir) > 1 {
+		logDirPath := strings.Join(logDir[:len(logDir)-1], "/")
+		if err := os.MkdirAll(logDirPath, 0755); err != nil {
+			return fmt.Errorf("log papkasini yaratishda xatolik: %v", err)
+		}
+	}
+
+	// IP bloklash tizimini yaratish
+	var err error
+	ipBlocker, err = security.NewIPBlocker(
+		time.Duration(ipBlockerConfig.BlockDuration)*time.Minute,
+		ipBlockerConfig.MaxAttempts,
+		ipBlockerConfig.LogFilePath,
+	)
+
+	return err
+}
 
 // TokenAuthMiddleware - API token autentifikatsiyasi uchun middleware
 func TokenAuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// IP manzilni olish
+		clientIP := c.ClientIP()
+
+		// IP bloklash tizimi ishga tushirilgan bo'lsa, IP manzilni tekshirish
+		if ipBlocker != nil && config.Config.Security.IPBlocker.Enabled {
+			// IP manzil bloklangan bo'lsa, so'rovni rad etish
+			if ipBlocker.IsBlocked(clientIP) {
+				remainingTime := ipBlocker.GetRemainingBlockTime(clientIP)
+				c.JSON(http.StatusTooManyRequests, gin.H{
+					"error": fmt.Sprintf("IP manzil bloklangan. Qolgan vaqt: %s", remainingTime.Round(time.Second)),
+				})
+				c.Abort()
+				return
+			}
+		}
+
 		// Authorization headerini tekshirish
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			// IP bloklash tizimi ishga tushirilgan bo'lsa, muvaffaqiyatsiz urinishni qayd qilish
+			if ipBlocker != nil && config.Config.Security.IPBlocker.Enabled {
+				ipBlocker.RecordFailedAttempt(clientIP, c.Request.UserAgent(), c.Request.URL.Path)
+			}
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header topilmadi"})
 			c.Abort()
 			return
@@ -29,6 +85,11 @@ func TokenAuthMiddleware() gin.HandlerFunc {
 		// Bearer token formatini tekshirish
 		parts := strings.Split(authHeader, " ")
 		if len(parts) != 2 || parts[0] != "Bearer" {
+			// IP bloklash tizimi ishga tushirilgan bo'lsa, muvaffaqiyatsiz urinishni qayd qilish
+			if ipBlocker != nil && config.Config.Security.IPBlocker.Enabled {
+				ipBlocker.RecordFailedAttempt(clientIP, c.Request.UserAgent(), c.Request.URL.Path)
+			}
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Noto'g'ri Authorization format. 'Bearer TOKEN' formatida bo'lishi kerak"})
 			c.Abort()
 			return
@@ -37,9 +98,19 @@ func TokenAuthMiddleware() gin.HandlerFunc {
 		// Tokenni tekshirish
 		token := parts[1]
 		if token != config.Config.API.Token {
+			// IP bloklash tizimi ishga tushirilgan bo'lsa, muvaffaqiyatsiz urinishni qayd qilish
+			if ipBlocker != nil && config.Config.Security.IPBlocker.Enabled {
+				ipBlocker.RecordFailedAttempt(clientIP, c.Request.UserAgent(), c.Request.URL.Path)
+			}
+
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Noto'g'ri token"})
 			c.Abort()
 			return
+		}
+
+		// Token to'g'ri bo'lsa, muvaffaqiyatsiz urinishlar sonini nolga tushirish
+		if ipBlocker != nil && config.Config.Security.IPBlocker.Enabled {
+			ipBlocker.ResetFailedAttempts(clientIP)
 		}
 
 		c.Next()
