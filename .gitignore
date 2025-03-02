@@ -1,5 +1,6 @@
 /bin
 .env
+/data/*.db
 
 # Compiled binaries
 wireguard-client-api
@@ -32,3 +33,7 @@ Thumbs.db
 
 # Service files
 *.service
+
+# Wireguard config files
+*.conf
+*.conf.json

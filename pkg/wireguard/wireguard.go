@@ -52,9 +52,17 @@ func GenerateKeyPair() (string, string, error) {
 }
 
 // GenerateClientIP - Yangi IP manzil yaratish
-func GenerateClientIP() string {
+func GenerateClientIP(clientType models.ClientType) string {
 	rand.Seed(time.Now().UnixNano())
-	return fmt.Sprintf("10.7.0.%d/32", rand.Intn(250)+2) // 10.0.0.2 - 10.0.0.251 oralig'ida
+
+	// Client turiga qarab subnet tanlash
+	if clientType == models.ClientTypeVIP {
+		// VIP clientlar uchun 10.77.x.x subnet
+		return fmt.Sprintf("10.77.%d.%d/32", rand.Intn(250)+1, rand.Intn(250)+2) // 10.77.1-250.2-251
+	} else {
+		// Normal clientlar uchun 10.7.x.x subnet
+		return fmt.Sprintf("10.7.%d.%d/32", rand.Intn(250)+1, rand.Intn(250)+2) // 10.7.1-250.2-251
+	}
 }
 
 // CreateClientConfig - Wireguard client konfiguratsiyasini yaratish

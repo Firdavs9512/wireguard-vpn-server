@@ -183,7 +183,9 @@ DELETE /api/client/:id
 ## Texnik tafsilotlar
 
 - Server konfiguratsiyasiga yangi peerlar `wg` va `wg-quick` buyruqlari orqali qo'shiladi
-- Har bir client uchun unikal IP manzil 10.7.0.2 - 10.7.0.251 oralig'ida generatsiya qilinadi
+- Client turiga qarab IP manzil generatsiya qilinadi:
+  - Normal clientlar uchun: 10.7.x.x subnet
+  - VIP clientlar uchun: 10.77.x.x subnet
 - Client ma'lumotlari SQLite databaseda saqlanadi (`./data/wireguard.db`)
 - Database GORM ORM orqali boshqariladi
 - Clientlar uchun "normal" va "vip" turlari mavjud

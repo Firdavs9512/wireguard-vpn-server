@@ -72,7 +72,7 @@ func CreateClientHandler(c *gin.Context) {
 	}
 
 	// Client IP manzilini yaratish
-	clientIP := wireguard.GenerateClientIP()
+	clientIP := wireguard.GenerateClientIP(request.Type)
 
 	// Client konfiguratsiyasini yaratish
 	configText, configData := wireguard.CreateClientConfig(clientPrivateKey, presharedKey, clientIP, serverPublicKey)
