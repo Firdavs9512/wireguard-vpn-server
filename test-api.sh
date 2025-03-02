@@ -113,4 +113,16 @@ check_lifetime_response=$(call_api "GET" "/api/client/$first_client_id/lifetime"
 echo "Yangilangan client life_time ma'lumotlari (tekshirish):"
 echo "$check_lifetime_response" | jq .
 
+# 8. Client traffic ma'lumotlarini olish
+echo -e "\n8. GET /api/client/$first_client_id/traffic endpointiga so'rov yuborilmoqda..."
+traffic_response=$(call_api "GET" "/api/client/$first_client_id/traffic")
+echo "Client traffic ma'lumotlari:"
+echo "$traffic_response" | jq .
+
+# 9. Barcha clientlar traffic ma'lumotlarini olish
+echo -e "\n9. GET /api/clients/traffic endpointiga so'rov yuborilmoqda..."
+all_traffic_response=$(call_api "GET" "/api/clients/traffic")
+echo "Barcha clientlar traffic ma'lumotlari:"
+echo "$all_traffic_response" | jq .
+
 echo -e "\nBarcha testlar muvaffaqiyatli o'tdi!" 

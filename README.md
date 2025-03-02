@@ -11,6 +11,7 @@ Bu loyiha Golang yordamida Wireguard VPN clientlarini yaratish uchun API server 
 - Clientlarni SQLite databasega saqlash va boshqarish
 - Clientlarni ko'rish, o'chirish va boshqarish uchun API endpointlar
 - Client life_time vaqtini olish va yangilash uchun API endpointlar
+- Client traffic ma'lumotlarini olish uchun API endpointlar
 
 ## Talablar
 
@@ -232,6 +233,76 @@ PUT /api/client/:id/lifetime
 }
 ```
 
+### Client traffic ma'lumotlarini olish
+
+**So'rov:**
+
+```
+GET /api/client/:id/traffic
+```
+
+**Javob:**
+
+```json
+{
+  "id": 1,
+  "description": "Normal client",
+  "public_key": "client_public_key",
+  "address": "10.0.0.2/32",
+  "type": "normal",
+  "latest_handshake": "2023-12-01T12:30:45Z",
+  "bytes_received": 1048576,
+  "bytes_sent": 524288,
+  "allowed_ips": "10.0.0.2/32",
+  "bytes_received_formatted": "1.00 MB",
+  "bytes_sent_formatted": "512.00 KB",
+  "total_traffic": "1.50 MB"
+}
+```
+
+### Barcha clientlar traffic ma'lumotlarini olish
+
+**So'rov:**
+
+```
+GET /api/clients/traffic
+```
+
+**Javob:**
+
+```json
+[
+  {
+    "id": 1,
+    "description": "Normal client",
+    "public_key": "client_public_key",
+    "address": "10.0.0.2/32",
+    "type": "normal",
+    "latest_handshake": "2023-12-01T12:30:45Z",
+    "bytes_received": 1048576,
+    "bytes_sent": 524288,
+    "allowed_ips": "10.0.0.2/32",
+    "bytes_received_formatted": "1.00 MB",
+    "bytes_sent_formatted": "512.00 KB",
+    "total_traffic": "1.50 MB"
+  },
+  {
+    "id": 2,
+    "description": "VIP client",
+    "public_key": "client_public_key",
+    "address": "10.0.0.3/32",
+    "type": "vip",
+    "latest_handshake": "2023-12-01T13:15:30Z",
+    "bytes_received": 2097152,
+    "bytes_sent": 1048576,
+    "allowed_ips": "10.0.0.3/32",
+    "bytes_received_formatted": "2.00 MB",
+    "bytes_sent_formatted": "1.00 MB",
+    "total_traffic": "3.00 MB"
+  }
+]
+```
+
 ## Texnik tafsilotlar
 
 - Server konfiguratsiyasiga yangi peerlar `wg` va `wg-quick` buyruqlari orqali qo'shiladi
@@ -247,6 +318,8 @@ PUT /api/client/:id/lifetime
 - Muddati o'tgan clientlar avtomatik ravishda o'chiriladi va Wireguard konfiguratsiyasidan olib tashlanadi
 - Muddati o'tgan clientlarni tekshirish har 15 daqiqada amalga oshiriladi
 - Client life_time vaqtini olish va yangilash uchun maxsus API endpointlar mavjud
+- Client traffic ma'lumotlarini olish uchun maxsus API endpointlar mavjud
+- Traffic ma'lumotlari `wg show` buyrug'i orqali olinadi va odam o'qiy oladigan formatda qaytariladi
 
 ## Xavfsizlik eslatmasi
 

@@ -5,7 +5,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"time"
 
 	"wireguard-vpn-client-creater/pkg/config"
 	"wireguard-vpn-client-creater/pkg/models"
@@ -180,4 +182,124 @@ func RemovePeerFromServer(publicKey string) error {
 	}
 
 	return nil
+}
+
+// ClientTraffic - Client traffic ma'lumotlari
+type ClientTraffic struct {
+	PublicKey       string `json:"public_key"`
+	LatestHandshake string `json:"latest_handshake"`
+	BytesReceived   int64  `json:"bytes_received"`
+	BytesSent       int64  `json:"bytes_sent"`
+	AllowedIPs      string `json:"allowed_ips"`
+}
+
+// GetClientTraffic - Client traffic ma'lumotlarini olish
+func GetClientTraffic(publicKey string) (*ClientTraffic, error) {
+	// wg show orqali client ma'lumotlarini olish
+	cmd := exec.Command("wg", "show", config.InterfaceName, "dump")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("client ma'lumotlarini olishda xatolik: %v, output: %s", err, string(output))
+	}
+
+	// Natijani qatorlarga ajratish
+	lines := strings.Split(string(output), "\n")
+
+	// Har bir qatorni tekshirish
+	for _, line := range lines {
+		// Qatorni bo'sh joylar bo'yicha ajratish
+		fields := strings.Fields(line)
+
+		// Agar qator bo'sh bo'lsa yoki yetarlicha maydonlar bo'lmasa, keyingi qatorga o'tish
+		if len(fields) < 8 {
+			continue
+		}
+
+		// Agar bu client qidirilayotgan client bo'lsa
+		if fields[1] == publicKey {
+			// Traffic ma'lumotlarini olish
+			bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
+			bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
+
+			// Handshake vaqtini formatlash
+			var latestHandshake string
+			if fields[4] == "0" {
+				latestHandshake = "Hech qachon"
+			} else {
+				// Unix timestamp ni vaqtga o'zgartirish
+				timestamp, _ := strconv.ParseInt(fields[4], 10, 64)
+				handshakeTime := time.Unix(timestamp, 0)
+				latestHandshake = handshakeTime.Format(time.RFC3339)
+			}
+
+			// Traffic ma'lumotlarini qaytarish
+			return &ClientTraffic{
+				PublicKey:       fields[1],
+				LatestHandshake: latestHandshake,
+				BytesReceived:   bytesReceived,
+				BytesSent:       bytesSent,
+				AllowedIPs:      fields[3],
+			}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("client topilmadi: %s", publicKey)
+}
+
+// GetAllClientsTraffic - Barcha clientlar traffic ma'lumotlarini olish
+func GetAllClientsTraffic() (map[string]*ClientTraffic, error) {
+	// wg show orqali barcha clientlar ma'lumotlarini olish
+	cmd := exec.Command("wg", "show", config.InterfaceName, "dump")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("clientlar ma'lumotlarini olishda xatolik: %v, output: %s", err, string(output))
+	}
+
+	// Natijani qatorlarga ajratish
+	lines := strings.Split(string(output), "\n")
+
+	// Traffic ma'lumotlarini saqlash uchun map
+	clientsTraffic := make(map[string]*ClientTraffic)
+
+	// Har bir qatorni tekshirish (birinchi qatorni o'tkazib yuborish, chunki u server ma'lumotlari)
+	for i, line := range lines {
+		// Birinchi qator server ma'lumotlari, uni o'tkazib yuborish
+		if i == 0 {
+			continue
+		}
+
+		// Qatorni bo'sh joylar bo'yicha ajratish
+		fields := strings.Fields(line)
+
+		// Agar qator bo'sh bo'lsa yoki yetarlicha maydonlar bo'lmasa, keyingi qatorga o'tish
+		if len(fields) < 8 {
+			continue
+		}
+
+		// Traffic ma'lumotlarini olish
+		bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
+		bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
+
+		// Handshake vaqtini formatlash
+		var latestHandshake string
+		if fields[4] == "0" {
+			latestHandshake = "Hech qachon"
+		} else {
+			// Unix timestamp ni vaqtga o'zgartirish
+			timestamp, _ := strconv.ParseInt(fields[4], 10, 64)
+			handshakeTime := time.Unix(timestamp, 0)
+			latestHandshake = handshakeTime.Format(time.RFC3339)
+		}
+
+		// Traffic ma'lumotlarini saqlash
+		clientsTraffic[fields[1]] = &ClientTraffic{
+			PublicKey:       fields[1],
+			LatestHandshake: latestHandshake,
+			BytesReceived:   bytesReceived,
+			BytesSent:       bytesSent,
+			AllowedIPs:      fields[3],
+		}
+	}
+
+	return clientsTraffic, nil
 }

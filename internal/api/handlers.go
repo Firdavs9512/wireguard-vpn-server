@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -32,6 +33,12 @@ func SetupRouter() *gin.Engine {
 
 	// Client life_time vaqtini yangilash
 	r.PUT("/api/client/:id/lifetime", UpdateClientLifetimeHandler)
+
+	// Client traffic ma'lumotlarini olish
+	r.GET("/api/client/:id/traffic", GetClientTrafficHandler)
+
+	// Barcha clientlar traffic ma'lumotlarini olish
+	r.GET("/api/clients/traffic", GetAllClientsTrafficHandler)
 
 	return r
 }
@@ -281,4 +288,107 @@ func UpdateClientLifetimeHandler(c *gin.Context) {
 		"remaining_time": remainingTime,
 		"message":        "Client life_time vaqti muvaffaqiyatli yangilandi",
 	})
+}
+
+// GetClientTrafficHandler - Client traffic ma'lumotlarini olish uchun handler
+func GetClientTrafficHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	// Clientni databasedan olish
+	var client models.WireguardClient
+	if err := database.DB.First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Client topilmadi"})
+		return
+	}
+
+	// Client traffic ma'lumotlarini olish
+	traffic, err := wireguard.GetClientTraffic(client.PublicKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Traffic ma'lumotlarini olishda xatolik: " + err.Error()})
+		return
+	}
+
+	// Traffic ma'lumotlarini qaytarish
+	c.JSON(http.StatusOK, gin.H{
+		"id":               client.ID,
+		"description":      client.Description,
+		"public_key":       client.PublicKey,
+		"address":          client.Address,
+		"type":             client.Type,
+		"latest_handshake": traffic.LatestHandshake,
+		"bytes_received":   traffic.BytesReceived,
+		"bytes_sent":       traffic.BytesSent,
+		"allowed_ips":      traffic.AllowedIPs,
+		// Qo'shimcha ma'lumotlar
+		"bytes_received_formatted": formatBytes(traffic.BytesReceived),
+		"bytes_sent_formatted":     formatBytes(traffic.BytesSent),
+		"total_traffic":            formatBytes(traffic.BytesReceived + traffic.BytesSent),
+	})
+}
+
+// GetAllClientsTrafficHandler - Barcha clientlar traffic ma'lumotlarini olish uchun handler
+func GetAllClientsTrafficHandler(c *gin.Context) {
+	// Barcha clientlarni databasedan olish
+	clients, err := database.GetAllClients()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Clientlarni olishda xatolik: " + err.Error()})
+		return
+	}
+
+	// Barcha clientlar traffic ma'lumotlarini olish
+	allTraffic, err := wireguard.GetAllClientsTraffic()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Traffic ma'lumotlarini olishda xatolik: " + err.Error()})
+		return
+	}
+
+	// Har bir client uchun traffic ma'lumotlarini birlashtirish
+	var result []gin.H
+	for _, client := range clients {
+		// Client traffic ma'lumotlarini olish
+		traffic, exists := allTraffic[client.PublicKey]
+		if !exists {
+			// Agar traffic ma'lumotlari topilmasa, bo'sh ma'lumotlar bilan davom etish
+			traffic = &wireguard.ClientTraffic{
+				PublicKey:       client.PublicKey,
+				LatestHandshake: "Hech qachon",
+				BytesReceived:   0,
+				BytesSent:       0,
+				AllowedIPs:      client.Address,
+			}
+		}
+
+		// Client va traffic ma'lumotlarini birlashtirish
+		result = append(result, gin.H{
+			"id":               client.ID,
+			"description":      client.Description,
+			"public_key":       client.PublicKey,
+			"address":          client.Address,
+			"type":             client.Type,
+			"latest_handshake": traffic.LatestHandshake,
+			"bytes_received":   traffic.BytesReceived,
+			"bytes_sent":       traffic.BytesSent,
+			"allowed_ips":      traffic.AllowedIPs,
+			// Qo'shimcha ma'lumotlar
+			"bytes_received_formatted": formatBytes(traffic.BytesReceived),
+			"bytes_sent_formatted":     formatBytes(traffic.BytesSent),
+			"total_traffic":            formatBytes(traffic.BytesReceived + traffic.BytesSent),
+		})
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// formatBytes - Baytlarni odam o'qiy oladigan formatga o'zgartirish
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
