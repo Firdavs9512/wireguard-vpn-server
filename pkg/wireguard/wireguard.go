@@ -1,11 +1,11 @@
 package wireguard
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
@@ -191,113 +191,136 @@ type ClientTraffic struct {
 	BytesReceived   int64  `json:"bytes_received"`
 	BytesSent       int64  `json:"bytes_sent"`
 	AllowedIPs      string `json:"allowed_ips"`
+	Endpoint        string `json:"endpoint"`
+}
+
+// WgJsonOutput - wg-json buyrug'i natijasi
+type WgJsonOutput map[string]WgInterface
+
+// WgInterface - Wireguard interface ma'lumotlari
+type WgInterface struct {
+	PrivateKey string                `json:"privateKey"`
+	PublicKey  string                `json:"publicKey"`
+	ListenPort int                   `json:"listenPort"`
+	Peers      map[string]WgPeerInfo `json:"peers"`
+}
+
+// WgPeerInfo - Wireguard peer ma'lumotlari
+type WgPeerInfo struct {
+	PresharedKey    string   `json:"presharedKey"`
+	Endpoint        string   `json:"endpoint,omitempty"`
+	LatestHandshake int64    `json:"latestHandshake,omitempty"`
+	TransferRx      int64    `json:"transferRx,omitempty"`
+	TransferTx      int64    `json:"transferTx,omitempty"`
+	AllowedIps      []string `json:"allowedIps,omitempty"`
+}
+
+// GetWgJsonData - wg-json buyrug'i orqali ma'lumotlarni olish
+func GetWgJsonData() (WgJsonOutput, error) {
+	// wg-json buyrug'ini ishga tushirish
+	cmd := exec.Command("wg-json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("wg-json buyrug'ini ishga tushirishda xatolik: %v", err)
+	}
+
+	// JSON ma'lumotlarini parse qilish
+	var wgData WgJsonOutput
+	if err := json.Unmarshal(output, &wgData); err != nil {
+		return nil, fmt.Errorf("JSON ma'lumotlarini parse qilishda xatolik: %v", err)
+	}
+
+	return wgData, nil
 }
 
 // GetClientTraffic - Client traffic ma'lumotlarini olish
 func GetClientTraffic(publicKey string) (*ClientTraffic, error) {
-	// wg show orqali client ma'lumotlarini olish
-	cmd := exec.Command("wg", "show", config.InterfaceName, "dump")
-	output, err := cmd.CombinedOutput()
+	// wg-json buyrug'i orqali ma'lumotlarni olish
+	wgData, err := GetWgJsonData()
 	if err != nil {
-		return nil, fmt.Errorf("client ma'lumotlarini olishda xatolik: %v, output: %s", err, string(output))
+		return nil, err
 	}
 
-	// Natijani qatorlarga ajratish
-	lines := strings.Split(string(output), "\n")
-
-	// Har bir qatorni tekshirish
-	for _, line := range lines {
-		// Qatorni bo'sh joylar bo'yicha ajratish
-		fields := strings.Fields(line)
-
-		// Agar qator bo'sh bo'lsa yoki yetarlicha maydonlar bo'lmasa, keyingi qatorga o'tish
-		if len(fields) < 8 {
-			continue
-		}
-
-		// Agar bu client qidirilayotgan client bo'lsa
-		if fields[1] == publicKey {
-			// Traffic ma'lumotlarini olish
-			bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
-			bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
-
-			// Handshake vaqtini formatlash
-			var latestHandshake string
-			if fields[4] == "0" {
-				latestHandshake = "Hech qachon"
-			} else {
-				// Unix timestamp ni vaqtga o'zgartirish
-				timestamp, _ := strconv.ParseInt(fields[4], 10, 64)
-				handshakeTime := time.Unix(timestamp, 0)
-				latestHandshake = handshakeTime.Format(time.RFC3339)
-			}
-
-			// Traffic ma'lumotlarini qaytarish
-			return &ClientTraffic{
-				PublicKey:       fields[1],
-				LatestHandshake: latestHandshake,
-				BytesReceived:   bytesReceived,
-				BytesSent:       bytesSent,
-				AllowedIPs:      fields[3],
-			}, nil
-		}
+	// Interface ma'lumotlarini olish
+	interfaceData, exists := wgData[config.InterfaceName]
+	if !exists {
+		return nil, fmt.Errorf("interface topilmadi: %s", config.InterfaceName)
 	}
 
-	return nil, fmt.Errorf("client topilmadi: %s", publicKey)
+	// Peer ma'lumotlarini olish
+	peerInfo, exists := interfaceData.Peers[publicKey]
+	if !exists {
+		return nil, fmt.Errorf("client topilmadi: %s", publicKey)
+	}
+
+	// Handshake vaqtini formatlash
+	var latestHandshake string
+	if peerInfo.LatestHandshake == 0 {
+		latestHandshake = "Hech qachon"
+	} else {
+		handshakeTime := time.Unix(peerInfo.LatestHandshake, 0)
+		latestHandshake = handshakeTime.Format(time.RFC3339)
+	}
+
+	// AllowedIPs ni string ga o'zgartirish
+	allowedIPs := strings.Join(peerInfo.AllowedIps, ", ")
+	if allowedIPs == "" {
+		allowedIPs = "Mavjud emas"
+	}
+
+	// Traffic ma'lumotlarini qaytarish
+	return &ClientTraffic{
+		PublicKey:       publicKey,
+		LatestHandshake: latestHandshake,
+		BytesReceived:   peerInfo.TransferRx,
+		BytesSent:       peerInfo.TransferTx,
+		AllowedIPs:      allowedIPs,
+		Endpoint:        peerInfo.Endpoint,
+	}, nil
 }
 
 // GetAllClientsTraffic - Barcha clientlar traffic ma'lumotlarini olish
 func GetAllClientsTraffic() (map[string]*ClientTraffic, error) {
-	// wg show orqali barcha clientlar ma'lumotlarini olish
-	cmd := exec.Command("wg", "show", config.InterfaceName, "dump")
-	output, err := cmd.CombinedOutput()
+	// wg-json buyrug'i orqali ma'lumotlarni olish
+	wgData, err := GetWgJsonData()
 	if err != nil {
-		return nil, fmt.Errorf("clientlar ma'lumotlarini olishda xatolik: %v, output: %s", err, string(output))
+		return nil, err
 	}
 
-	// Natijani qatorlarga ajratish
-	lines := strings.Split(string(output), "\n")
+	// Interface ma'lumotlarini olish
+	interfaceData, exists := wgData[config.InterfaceName]
+	if !exists {
+		return nil, fmt.Errorf("interface topilmadi: %s", config.InterfaceName)
+	}
 
 	// Traffic ma'lumotlarini saqlash uchun map
 	clientsTraffic := make(map[string]*ClientTraffic)
 
-	// Har bir qatorni tekshirish (birinchi qatorni o'tkazib yuborish, chunki u server ma'lumotlari)
-	for i, line := range lines {
-		// Birinchi qator server ma'lumotlari, uni o'tkazib yuborish
-		if i == 0 {
-			continue
-		}
-
-		// Qatorni bo'sh joylar bo'yicha ajratish
-		fields := strings.Fields(line)
-
-		// Agar qator bo'sh bo'lsa yoki yetarlicha maydonlar bo'lmasa, keyingi qatorga o'tish
-		if len(fields) < 8 {
-			continue
-		}
-
-		// Traffic ma'lumotlarini olish
-		bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
-		bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
-
+	// Har bir peer uchun traffic ma'lumotlarini olish
+	for publicKey, peerInfo := range interfaceData.Peers {
 		// Handshake vaqtini formatlash
 		var latestHandshake string
-		if fields[4] == "0" {
+		if peerInfo.LatestHandshake == 0 {
 			latestHandshake = "Hech qachon"
 		} else {
-			// Unix timestamp ni vaqtga o'zgartirish
-			timestamp, _ := strconv.ParseInt(fields[4], 10, 64)
-			handshakeTime := time.Unix(timestamp, 0)
+			handshakeTime := time.Unix(peerInfo.LatestHandshake, 0)
 			latestHandshake = handshakeTime.Format(time.RFC3339)
 		}
 
+		// AllowedIPs ni string ga o'zgartirish
+		allowedIPs := strings.Join(peerInfo.AllowedIps, ", ")
+		if allowedIPs == "" {
+			allowedIPs = "Mavjud emas"
+		}
+
 		// Traffic ma'lumotlarini saqlash
-		clientsTraffic[fields[1]] = &ClientTraffic{
-			PublicKey:       fields[1],
+		clientsTraffic[publicKey] = &ClientTraffic{
+			PublicKey:       publicKey,
 			LatestHandshake: latestHandshake,
-			BytesReceived:   bytesReceived,
-			BytesSent:       bytesSent,
-			AllowedIPs:      fields[3],
+			BytesReceived:   peerInfo.TransferRx,
+			BytesSent:       peerInfo.TransferTx,
+			AllowedIPs:      allowedIPs,
+			Endpoint:        peerInfo.Endpoint,
 		}
 	}
 

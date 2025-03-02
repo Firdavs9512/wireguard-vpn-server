@@ -319,6 +319,7 @@ func GetClientTrafficHandler(c *gin.Context) {
 		"bytes_received":   traffic.BytesReceived,
 		"bytes_sent":       traffic.BytesSent,
 		"allowed_ips":      traffic.AllowedIPs,
+		"endpoint":         traffic.Endpoint,
 		// Qo'shimcha ma'lumotlar
 		"bytes_received_formatted": formatBytes(traffic.BytesReceived),
 		"bytes_sent_formatted":     formatBytes(traffic.BytesSent),
@@ -355,6 +356,7 @@ func GetAllClientsTrafficHandler(c *gin.Context) {
 				BytesReceived:   0,
 				BytesSent:       0,
 				AllowedIPs:      client.Address,
+				Endpoint:        "Mavjud emas",
 			}
 		}
 
@@ -369,6 +371,7 @@ func GetAllClientsTrafficHandler(c *gin.Context) {
 			"bytes_received":   traffic.BytesReceived,
 			"bytes_sent":       traffic.BytesSent,
 			"allowed_ips":      traffic.AllowedIPs,
+			"endpoint":         traffic.Endpoint,
 			// Qo'shimcha ma'lumotlar
 			"bytes_received_formatted": formatBytes(traffic.BytesReceived),
 			"bytes_sent_formatted":     formatBytes(traffic.BytesSent),

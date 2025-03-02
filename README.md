@@ -254,6 +254,7 @@ GET /api/client/:id/traffic
   "bytes_received": 1048576,
   "bytes_sent": 524288,
   "allowed_ips": "10.0.0.2/32",
+  "endpoint": "192.168.1.100:48220",
   "bytes_received_formatted": "1.00 MB",
   "bytes_sent_formatted": "512.00 KB",
   "total_traffic": "1.50 MB"
@@ -282,6 +283,7 @@ GET /api/clients/traffic
     "bytes_received": 1048576,
     "bytes_sent": 524288,
     "allowed_ips": "10.0.0.2/32",
+    "endpoint": "192.168.1.100:48220",
     "bytes_received_formatted": "1.00 MB",
     "bytes_sent_formatted": "512.00 KB",
     "total_traffic": "1.50 MB"
@@ -296,6 +298,7 @@ GET /api/clients/traffic
     "bytes_received": 2097152,
     "bytes_sent": 1048576,
     "allowed_ips": "10.0.0.3/32",
+    "endpoint": "192.168.1.100:41244",
     "bytes_received_formatted": "2.00 MB",
     "bytes_sent_formatted": "1.00 MB",
     "total_traffic": "3.00 MB"
@@ -319,7 +322,15 @@ GET /api/clients/traffic
 - Muddati o'tgan clientlarni tekshirish har 15 daqiqada amalga oshiriladi
 - Client life_time vaqtini olish va yangilash uchun maxsus API endpointlar mavjud
 - Client traffic ma'lumotlarini olish uchun maxsus API endpointlar mavjud
-- Traffic ma'lumotlari `wg show` buyrug'i orqali olinadi va odam o'qiy oladigan formatda qaytariladi
+- Traffic ma'lumotlari `wg-json` buyrug'i orqali olinadi va odam o'qiy oladigan formatda qaytariladi
+- Traffic ma'lumotlari quyidagilarni o'z ichiga oladi:
+  - Oxirgi handshake vaqti
+  - Qabul qilingan baytlar (bytes_received)
+  - Yuborilgan baytlar (bytes_sent)
+  - Ruxsat berilgan IP manzillar (allowed_ips)
+  - Client endpoint (IP manzil va port)
+  - Odam o'qiy oladigan formatdagi ma'lumotlar (MB, GB kabi)
+  - Umumiy traffic (qabul qilingan + yuborilgan)
 
 ## Xavfsizlik eslatmasi
 
