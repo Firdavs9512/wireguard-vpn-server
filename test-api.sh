@@ -4,6 +4,28 @@
 
 echo "Wireguard VPN Client API ni test qilish..."
 
+# Konfiguratsiya faylini o'qish
+CONFIG_FILE="/etc/wireguard/server.yaml"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "Xatolik: Konfiguratsiya fayli topilmadi: $CONFIG_FILE"
+    echo "Avval konfiguratsiya faylini yarating:"
+    echo "sudo ./wireguard-client-api --create-config"
+    exit 1
+fi
+
+# API token ni olish
+API_TOKEN=$(grep -A 2 "api:" "$CONFIG_FILE" | grep "token:" | awk '{print $2}')
+if [ -z "$API_TOKEN" ]; then
+    echo "Xatolik: API token topilmadi. Konfiguratsiya faylini tekshiring."
+    exit 1
+fi
+
+# API port ni olish
+API_PORT=$(grep -A 2 "api:" "$CONFIG_FILE" | grep "port:" | awk '{print $2}')
+if [ -z "$API_PORT" ]; then
+    API_PORT=8080
+fi
+
 # Funksiya: API ga so'rov yuborish
 function call_api() {
     local method=$1
@@ -11,9 +33,9 @@ function call_api() {
     local data=$3
     
     if [ -z "$data" ]; then
-        echo "$(curl -s -X $method http://localhost:8080$endpoint)"
+        echo "$(curl -s -X $method -H "Authorization: Bearer $API_TOKEN" http://localhost:$API_PORT$endpoint)"
     else
-        echo "$(curl -s -X $method -H "Content-Type: application/json" -d "$data" http://localhost:8080$endpoint)"
+        echo "$(curl -s -X $method -H "Content-Type: application/json" -H "Authorization: Bearer $API_TOKEN" -d "$data" http://localhost:$API_PORT$endpoint)"
     fi
 }
 

@@ -3,64 +3,113 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"wireguard-vpn-client-creater/pkg/config"
 	"wireguard-vpn-client-creater/pkg/database"
 	"wireguard-vpn-client-creater/pkg/models"
 	"wireguard-vpn-client-creater/pkg/wireguard"
 )
 
+// TokenAuthMiddleware - API token autentifikatsiyasi uchun middleware
+func TokenAuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Authorization headerini tekshirish
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header topilmadi"})
+			c.Abort()
+			return
+		}
+
+		// Bearer token formatini tekshirish
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Noto'g'ri Authorization format. 'Bearer TOKEN' formatida bo'lishi kerak"})
+			c.Abort()
+			return
+		}
+
+		// Tokenni tekshirish
+		token := parts[1]
+		if token != config.Config.API.Token {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Noto'g'ri token"})
+			c.Abort()
+			return
+		}
+
+		c.Next()
+	}
+}
+
 // SetupRouter - API routerini sozlash
 func SetupRouter() *gin.Engine {
+	// Debug rejimini tekshirish
+	if !config.Config.Server.Debug {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	r := gin.Default()
 
-	// Client yaratish uchun endpoint
-	r.POST("/api/client", CreateClientHandler)
+	// API routerlari
+	api := r.Group("/api")
+	api.Use(TokenAuthMiddleware()) // Barcha API so'rovlari uchun token autentifikatsiyasi
 
-	// Barcha clientlarni olish
-	r.GET("/api/clients", GetAllClientsHandler)
-
-	// Client ma'lumotlarini olish
-	r.GET("/api/client/:id", GetClientHandler)
-
-	// Clientni o'chirish
-	r.DELETE("/api/client/:id", DeleteClientHandler)
-
-	// Client life_time vaqtini olish
-	r.GET("/api/client/:id/lifetime", GetClientLifetimeHandler)
-
-	// Client life_time vaqtini yangilash
-	r.PUT("/api/client/:id/lifetime", UpdateClientLifetimeHandler)
-
-	// Client traffic ma'lumotlarini olish
-	r.GET("/api/client/:id/traffic", GetClientTrafficHandler)
-
-	// Barcha clientlar traffic ma'lumotlarini olish
-	r.GET("/api/clients/traffic", GetAllClientsTrafficHandler)
+	// Client API endpointlari
+	api.POST("/client", CreateClientHandler)
+	api.GET("/clients", GetAllClientsHandler)
+	api.GET("/client/:id", GetClientHandler)
+	api.DELETE("/client/:id", DeleteClientHandler)
+	api.GET("/client/:id/lifetime", GetClientLifetimeHandler)
+	api.PUT("/client/:id/lifetime", UpdateClientLifetimeHandler)
+	api.GET("/client/:id/traffic", GetClientTrafficHandler)
+	api.GET("/clients/traffic", GetAllClientsTrafficHandler)
 
 	return r
 }
 
-// CreateClientHandler - Yangi client yaratish uchun handler
+// CreateClientHandler - yangi client yaratish
 func CreateClientHandler(c *gin.Context) {
-	// Requestdan ma'lumotlarni olish
-	var request struct {
-		Description string            `json:"description"`
-		LifeTime    int               `json:"life_time"` // Soniya, 0 = cheksiz
-		Type        models.ClientType `json:"type"`
+	// Request bodyni o'qish
+	var req struct {
+		Description string `json:"description"`
+		LifeTime    int    `json:"life_time"`
+		Type        string `json:"type"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil {
-		// Agar ma'lumotlar berilmagan bo'lsa, default qiymatlarni ishlatamiz
-		request.Description = ""
-		request.LifeTime = 0
-		request.Type = models.ClientTypeNormal
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Noto'g'ri so'rov formati"})
+		return
 	}
 
 	// Type ni tekshirish
-	if request.Type != models.ClientTypeNormal && request.Type != models.ClientTypeVIP {
-		request.Type = models.ClientTypeNormal
+	if req.Type != "" && req.Type != "normal" && req.Type != "vip" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Type faqat 'normal' yoki 'vip' bo'lishi mumkin"})
+		return
+	}
+
+	// Default qiymatlarni o'rnatish
+	if req.Type == "" {
+		req.Type = "normal"
+	}
+
+	// ClientType ga o'zgartirish
+	var clientType models.ClientType
+	if req.Type == "vip" {
+		clientType = models.ClientTypeVIP
+	} else {
+		clientType = models.ClientTypeNormal
+	}
+
+	// Ishlatilgan IP manzillarni olish
+	usedIPs, err := database.GetUsedIPAddresses("")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Ishlatilgan IP manzillarni olishda xatolik: %v", err)})
+		return
 	}
 
 	// Server public key ni o'qish
@@ -85,28 +134,29 @@ func CreateClientHandler(c *gin.Context) {
 	}
 
 	// Client IP manzilini yaratish
-	// Databasedagi ishlatilayotgan IP manzillarni olish
-	var subnetPrefix string
-	if request.Type == models.ClientTypeVIP {
-		subnetPrefix = "10.77."
-	} else {
-		subnetPrefix = "10.7."
-	}
-
-	usedIPs, err := database.GetUsedIPAddresses(subnetPrefix)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "IP manzillarni olishda xatolik: " + err.Error()})
-		return
-	}
-
-	clientIP, err := wireguard.FindAvailableIP(request.Type, usedIPs)
+	clientIP, err := wireguard.FindAvailableIP(clientType, usedIPs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Bo'sh IP manzil topilmadi: " + err.Error()})
 		return
 	}
 
-	// Client konfiguratsiyasini yaratish
-	configText, configData := wireguard.CreateClientConfig(clientPrivateKey, presharedKey, clientIP, serverPublicKey)
+	// Client obyektini yaratish
+	client := &models.WireguardClient{
+		PublicKey:    clientPublicKey,
+		PrivateKey:   clientPrivateKey,
+		PresharedKey: presharedKey,
+		Address:      clientIP,
+		Description:  req.Description,
+		Active:       true,
+		Type:         clientType,
+		LifeTime:     req.LifeTime,
+	}
+
+	// ExpiresAt ni hisoblash
+	if req.LifeTime > 0 {
+		expiresAt := time.Now().Add(time.Duration(req.LifeTime) * time.Second)
+		client.ExpiresAt = &expiresAt
+	}
 
 	// Serverda client konfiguratsiyasini saqlash
 	err = wireguard.AddPeerToServer(clientPublicKey, clientIP, presharedKey)
@@ -115,43 +165,20 @@ func CreateClientHandler(c *gin.Context) {
 		return
 	}
 
-	// ExpiresAt ni hisoblash
-	var expiresAt *time.Time
-	if request.LifeTime > 0 {
-		expiry := time.Now().Add(time.Duration(request.LifeTime) * time.Second)
-		expiresAt = &expiry
-	}
-
 	// Clientni databasega saqlash
-	client := &models.WireguardClient{
-		PublicKey:     clientPublicKey,
-		PrivateKey:    clientPrivateKey,
-		PresharedKey:  presharedKey,
-		Address:       clientIP,
-		Endpoint:      configData.Endpoint,
-		DNS:           configData.DNS,
-		AllowedIPs:    configData.AllowedIPs,
-		ConfigText:    configText,
-		LastConnected: time.Now(),
-		Description:   request.Description,
-		Active:        true,
-		Type:          request.Type,
-		LifeTime:      request.LifeTime,
-		ExpiresAt:     expiresAt,
-	}
-
 	if err := database.SaveClient(client); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Clientni databasega saqlashda xatolik: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Clientni saqlashda xatolik: %v", err)})
 		return
 	}
 
-	// Natijani qaytarish
-	response := models.ClientResponse{
-		Config: configText,
-		Data:   configData,
-	}
+	// Client konfiguratsiyasini yaratish
+	configText, _ := wireguard.CreateClientConfig(clientPrivateKey, presharedKey, clientIP, serverPublicKey)
 
-	c.JSON(http.StatusOK, response)
+	// Natijani qaytarish
+	c.JSON(http.StatusOK, gin.H{
+		"config": configText,
+		"data":   client,
+	})
 }
 
 // GetAllClientsHandler - Barcha clientlarni olish uchun handler
@@ -290,13 +317,25 @@ func UpdateClientLifetimeHandler(c *gin.Context) {
 	})
 }
 
-// GetClientTrafficHandler - Client traffic ma'lumotlarini olish uchun handler
+// GetClientTrafficHandler - Client traffic ma'lumotlarini olish
 func GetClientTrafficHandler(c *gin.Context) {
-	id := c.Param("id")
+	// Client ID ni olish
+	clientID := c.Param("id")
+	if clientID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Client ID ko'rsatilmagan"})
+		return
+	}
+
+	// ID ni uint ga o'zgartirish
+	id, err := strconv.ParseUint(clientID, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Noto'g'ri ID formati"})
+		return
+	}
 
 	// Clientni databasedan olish
-	var client models.WireguardClient
-	if err := database.DB.First(&client, id).Error; err != nil {
+	client, err := database.GetClientByID(uint(id))
+	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Client topilmadi"})
 		return
 	}
@@ -304,81 +343,86 @@ func GetClientTrafficHandler(c *gin.Context) {
 	// Client traffic ma'lumotlarini olish
 	traffic, err := wireguard.GetClientTraffic(client.PublicKey)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Traffic ma'lumotlarini olishda xatolik: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Traffic ma'lumotlarini olishda xatolik: %v", err)})
 		return
 	}
 
-	// Traffic ma'lumotlarini qaytarish
+	// Natijani qaytarish
 	c.JSON(http.StatusOK, gin.H{
-		"id":               client.ID,
-		"description":      client.Description,
-		"public_key":       client.PublicKey,
-		"address":          client.Address,
-		"type":             client.Type,
-		"latest_handshake": traffic.LatestHandshake,
-		"bytes_received":   traffic.BytesReceived,
-		"bytes_sent":       traffic.BytesSent,
-		"allowed_ips":      traffic.AllowedIPs,
-		"endpoint":         traffic.Endpoint,
-		// Qo'shimcha ma'lumotlar
-		"bytes_received_formatted": formatBytes(traffic.BytesReceived),
-		"bytes_sent_formatted":     formatBytes(traffic.BytesSent),
-		"total_traffic":            formatBytes(traffic.BytesReceived + traffic.BytesSent),
+		"client_id":                client.ID,
+		"description":              client.Description,
+		"public_key":               client.PublicKey,
+		"address":                  client.Address,
+		"latest_handshake":         traffic.LatestHandshake,
+		"bytes_received":           traffic.BytesReceived,
+		"bytes_sent":               traffic.BytesSent,
+		"bytes_received_formatted": traffic.BytesReceivedFormatted,
+		"bytes_sent_formatted":     traffic.BytesSentFormatted,
+		"allowed_ips":              traffic.AllowedIPs,
 	})
 }
 
-// GetAllClientsTrafficHandler - Barcha clientlar traffic ma'lumotlarini olish uchun handler
+// GetAllClientsTrafficHandler - Barcha clientlar traffic ma'lumotlarini olish
 func GetAllClientsTrafficHandler(c *gin.Context) {
 	// Barcha clientlarni databasedan olish
 	clients, err := database.GetAllClients()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Clientlarni olishda xatolik: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Clientlarni olishda xatolik: %v", err)})
 		return
 	}
 
 	// Barcha clientlar traffic ma'lumotlarini olish
-	allTraffic, err := wireguard.GetAllClientsTraffic()
+	trafficList, err := wireguard.GetAllClientsTraffic()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Traffic ma'lumotlarini olishda xatolik: " + err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Traffic ma'lumotlarini olishda xatolik: %v", err)})
 		return
 	}
 
-	// Har bir client uchun traffic ma'lumotlarini birlashtirish
+	// Traffic ma'lumotlarini client ma'lumotlari bilan birlashtirish
 	var result []gin.H
 	for _, client := range clients {
-		// Client traffic ma'lumotlarini olish
-		traffic, exists := allTraffic[client.PublicKey]
-		if !exists {
-			// Agar traffic ma'lumotlari topilmasa, bo'sh ma'lumotlar bilan davom etish
-			traffic = &wireguard.ClientTraffic{
-				PublicKey:       client.PublicKey,
-				LatestHandshake: "Hech qachon",
-				BytesReceived:   0,
-				BytesSent:       0,
-				AllowedIPs:      client.Address,
-				Endpoint:        "Mavjud emas",
+		// Client uchun traffic ma'lumotlarini topish
+		var clientTraffic *wireguard.ClientTraffic
+		for _, traffic := range trafficList {
+			if traffic.PublicKey == client.PublicKey {
+				clientTraffic = traffic
+				break
 			}
 		}
 
-		// Client va traffic ma'lumotlarini birlashtirish
-		result = append(result, gin.H{
-			"id":               client.ID,
-			"description":      client.Description,
-			"public_key":       client.PublicKey,
-			"address":          client.Address,
-			"type":             client.Type,
-			"latest_handshake": traffic.LatestHandshake,
-			"bytes_received":   traffic.BytesReceived,
-			"bytes_sent":       traffic.BytesSent,
-			"allowed_ips":      traffic.AllowedIPs,
-			"endpoint":         traffic.Endpoint,
-			// Qo'shimcha ma'lumotlar
-			"bytes_received_formatted": formatBytes(traffic.BytesReceived),
-			"bytes_sent_formatted":     formatBytes(traffic.BytesSent),
-			"total_traffic":            formatBytes(traffic.BytesReceived + traffic.BytesSent),
-		})
+		// Agar traffic ma'lumotlari topilmagan bo'lsa, default qiymatlarni ishlatish
+		if clientTraffic == nil {
+			// Yangi client uchun default traffic ma'lumotlari
+			result = append(result, gin.H{
+				"client_id":                client.ID,
+				"description":              client.Description,
+				"public_key":               client.PublicKey,
+				"address":                  client.Address,
+				"latest_handshake":         time.Time{},
+				"bytes_received":           int64(0),
+				"bytes_sent":               int64(0),
+				"bytes_received_formatted": "0 B",
+				"bytes_sent_formatted":     "0 B",
+				"allowed_ips":              client.Address,
+			})
+		} else {
+			// Traffic ma'lumotlari bilan client ma'lumotlarini birlashtirish
+			result = append(result, gin.H{
+				"client_id":                client.ID,
+				"description":              client.Description,
+				"public_key":               client.PublicKey,
+				"address":                  client.Address,
+				"latest_handshake":         clientTraffic.LatestHandshake,
+				"bytes_received":           clientTraffic.BytesReceived,
+				"bytes_sent":               clientTraffic.BytesSent,
+				"bytes_received_formatted": clientTraffic.BytesReceivedFormatted,
+				"bytes_sent_formatted":     clientTraffic.BytesSentFormatted,
+				"allowed_ips":              clientTraffic.AllowedIPs,
+			})
+		}
 	}
 
+	// Natijani qaytarish
 	c.JSON(http.StatusOK, result)
 }
 

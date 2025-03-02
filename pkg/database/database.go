@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"wireguard-vpn-client-creater/pkg/config"
 	"wireguard-vpn-client-creater/pkg/models"
 	"wireguard-vpn-client-creater/pkg/wireguard"
 )
@@ -19,6 +20,11 @@ var DB *gorm.DB
 
 // InitDB - Databaseni ishga tushirish
 func InitDB(dbPath string) (*gorm.DB, error) {
+	// Agar dbPath berilmagan bo'lsa, konfiguratsiyadan olish
+	if dbPath == "" {
+		dbPath = config.Config.Database.Path
+	}
+
 	// Database papkasini yaratish
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, err

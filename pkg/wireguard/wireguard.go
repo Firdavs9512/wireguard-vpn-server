@@ -1,11 +1,13 @@
 package wireguard
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,39 +17,42 @@ import (
 
 // GetServerPublicKey - Server public key ni o'qish
 func GetServerPublicKey() (string, error) {
-	// Server public key ni o'qish
-	publicKeyBytes, err := os.ReadFile(config.ServerPublicKeyPath)
-	if err != nil {
-		return "", fmt.Errorf("server public key o'qishda xatolik: %v", err)
+	// Konfiguratsiyadan server public key faylini olish
+	serverPublicKeyPath := config.Config.Wireguard.ServerPublicKeyPath
+
+	// Agar fayl ko'rsatilmagan bo'lsa, default qiymatni ishlatish
+	if serverPublicKeyPath == "" {
+		serverPublicKeyPath = "/etc/wireguard/server_public.key"
 	}
-	return strings.TrimSpace(string(publicKeyBytes)), nil
+
+	// Faylni o'qish
+	publicKey, err := os.ReadFile(serverPublicKeyPath)
+	if err != nil {
+		return "", fmt.Errorf("server public key faylini o'qishda xatolik: %v", err)
+	}
+
+	// Qator so'ngidagi bo'sh joylarni olib tashlash
+	return strings.TrimSpace(string(publicKey)), nil
 }
 
 // GenerateKeyPair - Yangi client uchun private va public key yaratish
 func GenerateKeyPair() (string, string, error) {
-	// Vaqtinchalik papka yaratish
-	tempDir, err := os.MkdirTemp("", "wg-keys")
-	if err != nil {
-		return "", "", err
-	}
-	defer os.RemoveAll(tempDir)
-
 	// Private key yaratish
-	cmd := exec.Command("wg", "genkey")
-	privateKeyBytes, err := cmd.Output()
+	privateKeyCmd := exec.Command("wg", "genkey")
+	privateKeyOutput, err := privateKeyCmd.Output()
 	if err != nil {
 		return "", "", fmt.Errorf("private key yaratishda xatolik: %v", err)
 	}
-	privateKey := strings.TrimSpace(string(privateKeyBytes))
+	privateKey := strings.TrimSpace(string(privateKeyOutput))
 
-	// Public key yaratish
-	cmd = exec.Command("wg", "pubkey")
-	cmd.Stdin = strings.NewReader(privateKey)
-	publicKeyBytes, err := cmd.Output()
+	// Private keydan public key yaratish
+	publicKeyCmd := exec.Command("wg", "pubkey")
+	publicKeyCmd.Stdin = bytes.NewBufferString(privateKey)
+	publicKeyOutput, err := publicKeyCmd.Output()
 	if err != nil {
 		return "", "", fmt.Errorf("public key yaratishda xatolik: %v", err)
 	}
-	publicKey := strings.TrimSpace(string(publicKeyBytes))
+	publicKey := strings.TrimSpace(string(publicKeyOutput))
 
 	return privateKey, publicKey, nil
 }
@@ -91,14 +96,17 @@ func FindAvailableIP(clientType models.ClientType, usedIPs []string) (string, er
 
 // CreateClientConfig - Wireguard client konfiguratsiyasini yaratish
 func CreateClientConfig(clientPrivateKey, presharedKey, clientIP, serverPublicKey string) (string, models.WireguardConfig) {
+	// Endpoint yaratish
+	endpoint := fmt.Sprintf("%s:%d", config.Config.Server.IP, config.Config.Server.Port)
+
 	// Client konfiguratsiyasi
-	config := models.WireguardConfig{
-		Endpoint:   fmt.Sprintf("%s:51820", config.ServerIP),
+	clientConfig := models.WireguardConfig{
+		Endpoint:   endpoint,
 		Address:    clientIP,
 		PrivateKey: clientPrivateKey,
 		PublicKey:  serverPublicKey,
-		DNS:        config.DNS,
-		AllowedIPs: config.AllowedIPs,
+		DNS:        config.Config.Wireguard.DNS,
+		AllowedIPs: config.Config.Wireguard.AllowedIPs,
 	}
 
 	// Wireguard konfiguratsiya fayli formati
@@ -112,10 +120,10 @@ PublicKey = %s
 PresharedKey = %s
 AllowedIPs = %s
 Endpoint = %s
-PersistentKeepalive = 25
-`, clientPrivateKey, clientIP, config.DNS, serverPublicKey, presharedKey, config.AllowedIPs, config.Endpoint)
+PersistentKeepalive = %d
+`, clientPrivateKey, clientIP, config.Config.Wireguard.DNS, serverPublicKey, presharedKey, config.Config.Wireguard.AllowedIPs, endpoint, config.Config.Wireguard.PersistentKeepalive)
 
-	return configText, config
+	return configText, clientConfig
 }
 
 // AddPeerToServer - Server konfiguratsiyasiga yangi peer qo'shish
@@ -137,14 +145,14 @@ func AddPeerToServer(clientPublicKey, clientIP, presharedKey string) error {
 	tempPresharedKeyFile.Close()
 
 	// wg-quick orqali yangi peer qo'shish
-	cmd := exec.Command("wg", "set", config.InterfaceName, "peer", clientPublicKey, "preshared-key", tempPresharedKeyFile.Name(), "allowed-ips", clientIPWithoutCIDR+"/32")
+	cmd := exec.Command("wg", "set", config.Config.Server.Interface, "peer", clientPublicKey, "preshared-key", tempPresharedKeyFile.Name(), "allowed-ips", clientIPWithoutCIDR+"/32")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("peer qo'shishda xatolik: %v, output: %s", err, string(output))
 	}
 
 	// O'zgarishlarni saqlash
-	cmd = exec.Command("bash", "-c", fmt.Sprintf("wg-quick save %s", config.InterfaceName))
+	cmd = exec.Command("bash", "-c", fmt.Sprintf("wg-quick save %s", config.Config.Server.Interface))
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("konfiguratsiyani saqlashda xatolik: %v, output: %s", err, string(output))
@@ -156,26 +164,26 @@ func AddPeerToServer(clientPublicKey, clientIP, presharedKey string) error {
 // GeneratePresharedKey - Preshared key yaratish
 func GeneratePresharedKey() (string, error) {
 	// Preshared key yaratish
-	cmd := exec.Command("wg", "genpsk")
-	presharedKeyBytes, err := cmd.Output()
+	presharedKeyCmd := exec.Command("wg", "genpsk")
+	presharedKeyOutput, err := presharedKeyCmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("preshared key yaratishda xatolik: %v", err)
 	}
-	presharedKey := strings.TrimSpace(string(presharedKeyBytes))
+	presharedKey := strings.TrimSpace(string(presharedKeyOutput))
 	return presharedKey, nil
 }
 
 // RemovePeerFromServer - Server konfiguratsiyasidan peerni o'chirish
 func RemovePeerFromServer(publicKey string) error {
 	// wg-quick orqali peerni o'chirish
-	cmd := exec.Command("wg", "set", config.InterfaceName, "peer", publicKey, "remove")
+	cmd := exec.Command("wg", "set", config.Config.Server.Interface, "peer", publicKey, "remove")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("peerni o'chirishda xatolik: %v, output: %s", err, string(output))
 	}
 
 	// O'zgarishlarni saqlash
-	cmd = exec.Command("bash", "-c", fmt.Sprintf("wg-quick save %s", config.InterfaceName))
+	cmd = exec.Command("bash", "-c", fmt.Sprintf("wg-quick save %s", config.Config.Server.Interface))
 	output, err = cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("konfiguratsiyani saqlashda xatolik: %v, output: %s", err, string(output))
@@ -186,12 +194,13 @@ func RemovePeerFromServer(publicKey string) error {
 
 // ClientTraffic - Client traffic ma'lumotlari
 type ClientTraffic struct {
-	PublicKey       string `json:"public_key"`
-	LatestHandshake string `json:"latest_handshake"`
-	BytesReceived   int64  `json:"bytes_received"`
-	BytesSent       int64  `json:"bytes_sent"`
-	AllowedIPs      string `json:"allowed_ips"`
-	Endpoint        string `json:"endpoint"`
+	PublicKey              string    `json:"public_key"`
+	LatestHandshake        time.Time `json:"latest_handshake"`
+	BytesReceived          int64     `json:"bytes_received"`
+	BytesSent              int64     `json:"bytes_sent"`
+	AllowedIPs             string    `json:"allowed_ips"`
+	BytesReceivedFormatted string    `json:"bytes_received_formatted"`
+	BytesSentFormatted     string    `json:"bytes_sent_formatted"`
 }
 
 // WgJsonOutput - wg-json buyrug'i natijasi
@@ -235,94 +244,156 @@ func GetWgJsonData() (WgJsonOutput, error) {
 
 // GetClientTraffic - Client traffic ma'lumotlarini olish
 func GetClientTraffic(publicKey string) (*ClientTraffic, error) {
-	// wg-json buyrug'i orqali ma'lumotlarni olish
-	wgData, err := GetWgJsonData()
+	// Konfiguratsiyadan interface nomini olish
+	interfaceName := config.Config.Server.Interface
+
+	// Default qiymatni o'rnatish
+	if interfaceName == "" {
+		interfaceName = "wg0"
+	}
+
+	// wg komandasi orqali traffic ma'lumotlarini olish
+	cmd := exec.Command("wg", "show", interfaceName, "dump")
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("traffic ma'lumotlarini olishda xatolik: %v", err)
 	}
 
-	// Interface ma'lumotlarini olish
-	interfaceData, exists := wgData[config.InterfaceName]
-	if !exists {
-		return nil, fmt.Errorf("interface topilmadi: %s", config.InterfaceName)
+	// Natijani qayta ishlash
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 5 && fields[0] == publicKey {
+			// Handshake vaqtini o'zgartirish
+			handshakeUnix, _ := strconv.ParseInt(fields[4], 10, 64)
+			var handshakeTime time.Time
+			if handshakeUnix > 0 {
+				handshakeTime = time.Unix(handshakeUnix, 0)
+			}
+
+			// Traffic ma'lumotlarini o'zgartirish
+			bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
+			bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
+
+			// AllowedIPs ni olish
+			allowedIPs := ""
+			if len(fields) >= 8 {
+				allowedIPs = fields[7]
+			}
+
+			// Traffic obyektini yaratish
+			traffic := &ClientTraffic{
+				PublicKey:              publicKey,
+				LatestHandshake:        handshakeTime,
+				BytesReceived:          bytesReceived,
+				BytesSent:              bytesSent,
+				AllowedIPs:             allowedIPs,
+				BytesReceivedFormatted: formatBytes(bytesReceived),
+				BytesSentFormatted:     formatBytes(bytesSent),
+			}
+
+			return traffic, nil
+		}
 	}
 
-	// Peer ma'lumotlarini olish
-	peerInfo, exists := interfaceData.Peers[publicKey]
-	if !exists {
-		return nil, fmt.Errorf("client topilmadi: %s", publicKey)
-	}
-
-	// Handshake vaqtini formatlash
-	var latestHandshake string
-	if peerInfo.LatestHandshake == 0 {
-		latestHandshake = "Hech qachon"
-	} else {
-		handshakeTime := time.Unix(peerInfo.LatestHandshake, 0)
-		latestHandshake = handshakeTime.Format(time.RFC3339)
-	}
-
-	// AllowedIPs ni string ga o'zgartirish
-	allowedIPs := strings.Join(peerInfo.AllowedIps, ", ")
-	if allowedIPs == "" {
-		allowedIPs = "Mavjud emas"
-	}
-
-	// Traffic ma'lumotlarini qaytarish
-	return &ClientTraffic{
-		PublicKey:       publicKey,
-		LatestHandshake: latestHandshake,
-		BytesReceived:   peerInfo.TransferRx,
-		BytesSent:       peerInfo.TransferTx,
-		AllowedIPs:      allowedIPs,
-		Endpoint:        peerInfo.Endpoint,
-	}, nil
+	return nil, fmt.Errorf("client topilmadi")
 }
 
 // GetAllClientsTraffic - Barcha clientlar traffic ma'lumotlarini olish
-func GetAllClientsTraffic() (map[string]*ClientTraffic, error) {
-	// wg-json buyrug'i orqali ma'lumotlarni olish
-	wgData, err := GetWgJsonData()
+func GetAllClientsTraffic() ([]*ClientTraffic, error) {
+	// Konfiguratsiyadan interface nomini olish
+	interfaceName := config.Config.Server.Interface
+
+	// Default qiymatni o'rnatish
+	if interfaceName == "" {
+		interfaceName = "wg0"
+	}
+
+	// wg komandasi orqali traffic ma'lumotlarini olish
+	cmd := exec.Command("wg", "show", interfaceName, "dump")
+	output, err := cmd.Output()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("traffic ma'lumotlarini olishda xatolik: %v", err)
 	}
 
-	// Interface ma'lumotlarini olish
-	interfaceData, exists := wgData[config.InterfaceName]
-	if !exists {
-		return nil, fmt.Errorf("interface topilmadi: %s", config.InterfaceName)
+	// Natijani qayta ishlash
+	var trafficList []*ClientTraffic
+	lines := strings.Split(string(output), "\n")
+
+	// Birinchi qatorni o'tkazib yuborish (interface ma'lumotlari)
+	for i := 1; i < len(lines); i++ {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) >= 7 {
+			// Handshake vaqtini o'zgartirish
+			handshakeUnix, _ := strconv.ParseInt(fields[4], 10, 64)
+			var handshakeTime time.Time
+			if handshakeUnix > 0 {
+				handshakeTime = time.Unix(handshakeUnix, 0)
+			}
+
+			// Traffic ma'lumotlarini o'zgartirish
+			bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
+			bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
+
+			// AllowedIPs ni olish
+			allowedIPs := ""
+			if len(fields) >= 8 {
+				allowedIPs = fields[7]
+			}
+
+			// Traffic obyektini yaratish
+			traffic := &ClientTraffic{
+				PublicKey:              fields[0],
+				LatestHandshake:        handshakeTime,
+				BytesReceived:          bytesReceived,
+				BytesSent:              bytesSent,
+				AllowedIPs:             allowedIPs,
+				BytesReceivedFormatted: formatBytes(bytesReceived),
+				BytesSentFormatted:     formatBytes(bytesSent),
+			}
+
+			trafficList = append(trafficList, traffic)
+		}
 	}
 
-	// Traffic ma'lumotlarini saqlash uchun map
-	clientsTraffic := make(map[string]*ClientTraffic)
+	return trafficList, nil
+}
 
-	// Har bir peer uchun traffic ma'lumotlarini olish
-	for publicKey, peerInfo := range interfaceData.Peers {
-		// Handshake vaqtini formatlash
-		var latestHandshake string
-		if peerInfo.LatestHandshake == 0 {
-			latestHandshake = "Hech qachon"
-		} else {
-			handshakeTime := time.Unix(peerInfo.LatestHandshake, 0)
-			latestHandshake = handshakeTime.Format(time.RFC3339)
-		}
+// formatBytes - Baytlarni o'qish uchun qulay formatga o'zgartirish
+func formatBytes(bytes int64) string {
+	const (
+		_          = iota
+		KB float64 = 1 << (10 * iota)
+		MB
+		GB
+		TB
+	)
 
-		// AllowedIPs ni string ga o'zgartirish
-		allowedIPs := strings.Join(peerInfo.AllowedIps, ", ")
-		if allowedIPs == "" {
-			allowedIPs = "Mavjud emas"
-		}
+	var size float64
+	var unit string
 
-		// Traffic ma'lumotlarini saqlash
-		clientsTraffic[publicKey] = &ClientTraffic{
-			PublicKey:       publicKey,
-			LatestHandshake: latestHandshake,
-			BytesReceived:   peerInfo.TransferRx,
-			BytesSent:       peerInfo.TransferTx,
-			AllowedIPs:      allowedIPs,
-			Endpoint:        peerInfo.Endpoint,
-		}
+	switch {
+	case bytes >= int64(TB):
+		size = float64(bytes) / TB
+		unit = "TB"
+	case bytes >= int64(GB):
+		size = float64(bytes) / GB
+		unit = "GB"
+	case bytes >= int64(MB):
+		size = float64(bytes) / MB
+		unit = "MB"
+	case bytes >= int64(KB):
+		size = float64(bytes) / KB
+		unit = "KB"
+	default:
+		size = float64(bytes)
+		unit = "B"
 	}
 
-	return clientsTraffic, nil
+	return fmt.Sprintf("%.2f %s", size, unit)
 }

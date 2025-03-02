@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"log"
 	"time"
 
@@ -26,8 +28,28 @@ func startExpirationChecker() {
 }
 
 func main() {
+	// Konfiguratsiya fayli yo'lini olish
+	configPath := flag.String("config", "/etc/wireguard/server.yaml", "Konfiguratsiya fayli yo'li")
+	createConfig := flag.Bool("create-config", false, "Default konfiguratsiya faylini yaratish")
+	flag.Parse()
+
+	// Default konfiguratsiya faylini yaratish
+	if *createConfig {
+		if err := config.CreateDefaultConfig(*configPath); err != nil {
+			log.Fatalf("Default konfiguratsiya faylini yaratishda xatolik: %v", err)
+		}
+		log.Printf("Default konfiguratsiya fayli yaratildi: %s", *configPath)
+		return
+	}
+
+	// Konfiguratsiya faylini o'qish
+	if err := config.LoadConfig(*configPath); err != nil {
+		log.Fatalf("Konfiguratsiya faylini o'qishda xatolik: %v", err)
+	}
+	log.Printf("Konfiguratsiya fayli o'qildi: %s", *configPath)
+
 	// Databaseni ishga tushirish
-	_, err := database.InitDB(config.DatabasePath)
+	_, err := database.InitDB(config.Config.Database.Path)
 	if err != nil {
 		log.Fatalf("Database initializatsiyasida xatolik: %v", err)
 	}
@@ -44,6 +66,9 @@ func main() {
 	r := api.SetupRouter()
 
 	// Serverni ishga tushirish
-	log.Println("Server started on :8080")
-	r.Run(":8080")
+	serverAddr := fmt.Sprintf(":%d", config.Config.API.Port)
+	log.Printf("Server started on %s", serverAddr)
+	if err := r.Run(serverAddr); err != nil {
+		log.Fatalf("Server ishga tushirishda xatolik: %v", err)
+	}
 }

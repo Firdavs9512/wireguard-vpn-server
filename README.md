@@ -20,6 +20,7 @@ Bu loyiha Golang yordamida Wireguard VPN clientlarini yaratish uchun API server 
 - `/etc/wireguard/` papkasida server konfiguratsiyasi va kalitlar mavjud bo'lishi kerak
 - Dasturni root huquqlari bilan ishga tushirish kerak (server konfiguratsiyasini o'zgartirish uchun)
 - Test script uchun `jq` o'rnatilgan bo'lishi kerak
+- `wg-json` buyrug'i o'rnatilgan bo'lishi kerak (traffic ma'lumotlarini olish uchun)
 
 ## O'rnatish
 
@@ -31,8 +32,42 @@ cd wireguard-vpn-client-creater
 # Dependencylarni o'rnatish
 go mod tidy
 
+# Default konfiguratsiya faylini yaratish
+sudo ./wireguard-client-api --create-config
+
+# Konfiguratsiya faylini tahrirlash
+sudo nano /etc/wireguard/server.yaml
+
 # Dasturni ishga tushirish (Makefile yordamida)
 make run
+```
+
+## Konfiguratsiya fayli
+
+Dastur `/etc/wireguard/server.yaml` faylidan konfiguratsiya ma'lumotlarini oladi. Bu faylni quyidagi buyruq bilan yaratish mumkin:
+
+```bash
+sudo ./wireguard-client-api --create-config
+```
+
+Konfiguratsiya fayli formati:
+
+```yaml
+server:
+  ip: 192.168.1.1        # Server IP manzili
+  port: 51820            # Wireguard port
+  interface: wg0         # Wireguard interface nomi
+  debug: false           # Debug rejimi
+api:
+  port: 8080             # API port
+  token: secure-token    # API token (xavfsizlik uchun o'zgartiring)
+wireguard:
+  dns: 1.1.1.1, 8.8.8.8  # DNS serverlari
+  allowed_ips: 0.0.0.0/0, ::/0  # Ruxsat berilgan IP manzillar
+  persistent_keepalive: 25      # Persistent keepalive vaqti
+  server_public_key_path: /etc/wireguard/server_public.key  # Server public key fayli
+database:
+  path: ./data/wireguard.db  # Database fayli yo'li
 ```
 
 ## Makefile buyruqlari
@@ -55,12 +90,20 @@ Loyihada API ni test qilish uchun `test-api.sh` scripti mavjud:
 chmod +x test-api.sh
 
 # Scriptni ishga tushirish
-./test-api.sh
+sudo ./test-api.sh
 ```
 
-Bu script API ga so'rov yuborib, natijani tekshiradi va client konfiguratsiyasini `client-config.conf` fayliga saqlaydi.
+Bu script API ga so'rov yuborib, natijani tekshiradi va client konfiguratsiyasini `normal-client.conf` va `vip-client.conf` fayllariga saqlaydi.
 
 ## API Qo'llanmasi
+
+Barcha API so'rovlari `Authorization` headerida token bilan yuborilishi kerak:
+
+```
+Authorization: Bearer <token>
+```
+
+Token konfiguratsiya faylida `api.token` maydonida ko'rsatilgan.
 
 ### Yangi client yaratish
 
