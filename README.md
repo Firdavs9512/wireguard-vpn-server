@@ -72,7 +72,9 @@ POST /api/client
 
 ```json
 {
-  "description": "Client tavsifi"
+  "description": "Client tavsifi",
+  "life_time": 30,
+  "type": "normal"
 }
 ```
 
@@ -80,14 +82,17 @@ POST /api/client
 
 ```json
 {
-  "config": "[Interface]\nPrivateKey = CLIENT_PRIVATE_KEY\nAddress = 10.0.0.X/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = SERVER_PUBLIC_KEY\nAllowedIPs = 0.0.0.0/0, ::/0\nEndpoint = SERVER_IP:51820\nPersistentKeepalive = 25\n",
+  "config": "Wireguard konfiguratsiya fayli matni",
   "data": {
-    "endpoint": "SERVER_IP:51820",
-    "address": "10.0.0.X/32",
-    "private_key": "CLIENT_PRIVATE_KEY",
-    "public_key": "SERVER_PUBLIC_KEY",
-    "dns": "1.1.1.1",
-    "allowed_ips": "0.0.0.0/0, ::/0"
+    "id": 1,
+    "description": "Client tavsifi",
+    "private_key": "client_private_key",
+    "public_key": "client_public_key",
+    "address": "10.0.0.2/32",
+    "endpoint": "server_endpoint:51820",
+    "type": "normal",
+    "life_time": 30,
+    "expires_at": "2023-12-31T23:59:59Z"
   }
 }
 ```
@@ -106,20 +111,29 @@ GET /api/clients
 [
   {
     "ID": 1,
-    "CreatedAt": "2023-03-01T12:00:00Z",
-    "UpdatedAt": "2023-03-01T12:00:00Z",
+    "CreatedAt": "2023-12-01T12:00:00Z",
+    "UpdatedAt": "2023-12-01T12:00:00Z",
     "DeletedAt": null,
-    "public_key": "CLIENT_PUBLIC_KEY",
-    "private_key": "CLIENT_PRIVATE_KEY",
-    "preshared_key": "PRESHARED_KEY",
-    "address": "10.0.0.X/32",
-    "endpoint": "SERVER_IP:51820",
-    "dns": "1.1.1.1, 8.8.8.8",
-    "allowed_ips": "0.0.0.0/0, ::/0",
-    "config_text": "...",
-    "last_connected": "2023-03-01T12:00:00Z",
-    "description": "Client tavsifi",
-    "active": true
+    "Description": "Normal client",
+    "PrivateKey": "client_private_key",
+    "PublicKey": "client_public_key",
+    "Address": "10.0.0.2/32",
+    "Type": "normal",
+    "LifeTime": 30,
+    "ExpiresAt": "2023-12-31T23:59:59Z"
+  },
+  {
+    "ID": 2,
+    "CreatedAt": "2023-12-01T12:30:00Z",
+    "UpdatedAt": "2023-12-01T12:30:00Z",
+    "DeletedAt": null,
+    "Description": "VIP client",
+    "PrivateKey": "client_private_key",
+    "PublicKey": "client_public_key",
+    "Address": "10.0.0.3/32",
+    "Type": "vip",
+    "LifeTime": 365,
+    "ExpiresAt": "2024-12-01T12:30:00Z"
   }
 ]
 ```
@@ -137,20 +151,16 @@ GET /api/client/:id
 ```json
 {
   "ID": 1,
-  "CreatedAt": "2023-03-01T12:00:00Z",
-  "UpdatedAt": "2023-03-01T12:00:00Z",
+  "CreatedAt": "2023-12-01T12:00:00Z",
+  "UpdatedAt": "2023-12-01T12:00:00Z",
   "DeletedAt": null,
-  "public_key": "CLIENT_PUBLIC_KEY",
-  "private_key": "CLIENT_PRIVATE_KEY",
-  "preshared_key": "PRESHARED_KEY",
-  "address": "10.0.0.X/32",
-  "endpoint": "SERVER_IP:51820",
-  "dns": "1.1.1.1, 8.8.8.8",
-  "allowed_ips": "0.0.0.0/0, ::/0",
-  "config_text": "...",
-  "last_connected": "2023-03-01T12:00:00Z",
-  "description": "Client tavsifi",
-  "active": true
+  "Description": "Normal client",
+  "PrivateKey": "client_private_key",
+  "PublicKey": "client_public_key",
+  "Address": "10.0.0.2/32",
+  "Type": "normal",
+  "LifeTime": 30,
+  "ExpiresAt": "2023-12-31T23:59:59Z"
 }
 ```
 
@@ -176,7 +186,14 @@ DELETE /api/client/:id
 - Har bir client uchun unikal IP manzil 10.7.0.2 - 10.7.0.251 oralig'ida generatsiya qilinadi
 - Client ma'lumotlari SQLite databaseda saqlanadi (`./data/wireguard.db`)
 - Database GORM ORM orqali boshqariladi
+- Clientlar uchun "normal" va "vip" turlari mavjud
+- Clientlar uchun amal qilish muddati belgilanishi mumkin (soniyalarda)
 
 ## Xavfsizlik eslatmasi
 
 Bu dastur server konfiguratsiyasini o'zgartirish uchun root huquqlariga ega bo'lishi kerak. Ishlab chiqarish muhitida qo'shimcha xavfsizlik choralarini ko'rish tavsiya etiladi. 
+
+Parametrlar:
+- `description` - Client tavsifi (majburiy)
+- `life_time` - Clientning amal qilish muddati (soniyalarda). 0 qiymati cheksiz muddatni bildiradi (ixtiyoriy, standart qiymati: 0)
+- `type` - Client turi: "normal" yoki "vip" (ixtiyoriy, standart qiymati: "normal") 

@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -79,4 +80,43 @@ func DeleteClient(id uint) error {
 // DeactivateClient - Clientni deaktivatsiya qilish
 func DeactivateClient(id uint) error {
 	return DB.Model(&models.WireguardClient{}).Where("id = ?", id).Update("active", false).Error
+}
+
+// GetClientByID - ID bo'yicha clientni topish
+func GetClientByID(id uint) (models.WireguardClient, error) {
+	var client models.WireguardClient
+	err := DB.First(&client, id).Error
+	return client, err
+}
+
+// CheckExpiredClients - Muddati o'tgan clientlarni tekshirish
+func CheckExpiredClients() ([]models.WireguardClient, error) {
+	var expiredClients []models.WireguardClient
+	// Faqat muddati o'tgan va muddati chekli bo'lgan clientlarni topish
+	// ExpiresAt NULL bo'lmagan va hozirgi vaqtdan kichik bo'lgan
+	err := DB.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).Find(&expiredClients).Error
+	return expiredClients, err
+}
+
+// DeactivateExpiredClients - Muddati o'tgan clientlarni deaktivatsiya qilish
+func DeactivateExpiredClients() error {
+	// Muddati o'tgan clientlarni topish
+	expiredClients, err := CheckExpiredClients()
+	if err != nil {
+		return err
+	}
+
+	// Har bir muddati o'tgan clientni deaktivatsiya qilish
+	for _, client := range expiredClients {
+		log.Printf("Deactivating expired client: %d - %s (expired at: %s)",
+			client.ID, client.Description, client.ExpiresAt.Format(time.RFC3339))
+
+		// Clientni deaktivatsiya qilish
+		if err := DeactivateClient(client.ID); err != nil {
+			log.Printf("Error deactivating client %d: %v", client.ID, err)
+			continue
+		}
+	}
+
+	return nil
 }

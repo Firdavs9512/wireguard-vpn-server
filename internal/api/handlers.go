@@ -32,13 +32,22 @@ func SetupRouter() *gin.Engine {
 
 // CreateClientHandler - Yangi client yaratish uchun handler
 func CreateClientHandler(c *gin.Context) {
-	// Requestdan description olish
+	// Requestdan ma'lumotlarni olish
 	var request struct {
-		Description string `json:"description"`
+		Description string            `json:"description"`
+		LifeTime    int               `json:"life_time"` // Soniya, 0 = cheksiz
+		Type        models.ClientType `json:"type"`
 	}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		// Agar description berilmagan bo'lsa, bo'sh string ishlatamiz
+		// Agar ma'lumotlar berilmagan bo'lsa, default qiymatlarni ishlatamiz
 		request.Description = ""
+		request.LifeTime = 0
+		request.Type = models.ClientTypeNormal
+	}
+
+	// Type ni tekshirish
+	if request.Type != models.ClientTypeNormal && request.Type != models.ClientTypeVIP {
+		request.Type = models.ClientTypeNormal
 	}
 
 	// Server public key ni o'qish
@@ -75,6 +84,13 @@ func CreateClientHandler(c *gin.Context) {
 		return
 	}
 
+	// ExpiresAt ni hisoblash
+	var expiresAt *time.Time
+	if request.LifeTime > 0 {
+		expiry := time.Now().Add(time.Duration(request.LifeTime) * time.Second)
+		expiresAt = &expiry
+	}
+
 	// Clientni databasega saqlash
 	client := &models.WireguardClient{
 		PublicKey:     clientPublicKey,
@@ -88,6 +104,9 @@ func CreateClientHandler(c *gin.Context) {
 		LastConnected: time.Now(),
 		Description:   request.Description,
 		Active:        true,
+		Type:          request.Type,
+		LifeTime:      request.LifeTime,
+		ExpiresAt:     expiresAt,
 	}
 
 	if err := database.SaveClient(client); err != nil {

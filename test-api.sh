@@ -17,9 +17,9 @@ function call_api() {
     fi
 }
 
-# Yangi client yaratish
-echo "1. POST /api/client endpointiga so'rov yuborilmoqda..."
-response=$(call_api "POST" "/api/client" '{"description":"Test client"}')
+# 1. Normal client yaratish
+echo "1. POST /api/client endpointiga so'rov yuborilmoqda (Normal client)..."
+response=$(call_api "POST" "/api/client" '{"description":"Normal client", "life_time": 2592000, "type": "normal"}')
 
 # Natijani tekshirish
 if [ $? -ne 0 ]; then
@@ -35,23 +35,49 @@ if ! echo "$response" | jq . >/dev/null 2>&1; then
 fi
 
 # Natijani chiroyli ko'rinishda chiqarish
-echo "API javob berdi:"
+echo "API javob berdi (Normal client):"
 echo "$response" | jq .
 
 # Config va data mavjudligini tekshirish
 if echo "$response" | jq -e '.config' >/dev/null && echo "$response" | jq -e '.data' >/dev/null; then
-    echo "Yangi client yaratish muvaffaqiyatli o'tdi!"
+    echo "Normal client yaratish muvaffaqiyatli o'tdi!"
     
     # Config faylini saqlash
-    echo "$response" | jq -r '.config' > client-config.conf
-    echo "Client konfiguratsiyasi 'client-config.conf' fayliga saqlandi."
+    echo "$response" | jq -r '.config' > normal-client.conf
+    echo "Normal client konfiguratsiyasi 'normal-client.conf' fayliga saqlandi."
 else
     echo "Xatolik: API javobida 'config' yoki 'data' maydonlari topilmadi."
     exit 1
 fi
 
-# Barcha clientlarni olish
-echo -e "\n2. GET /api/clients endpointiga so'rov yuborilmoqda..."
+# 2. VIP client yaratish
+echo -e "\n2. POST /api/client endpointiga so'rov yuborilmoqda (VIP client)..."
+response=$(call_api "POST" "/api/client" '{"description":"VIP client", "life_time": 31536000, "type": "vip"}')
+
+# Natijani tekshirish
+if [ $? -ne 0 ]; then
+    echo "Xatolik: API ga ulanib bo'lmadi."
+    exit 1
+fi
+
+# Natijani chiroyli ko'rinishda chiqarish
+echo "API javob berdi (VIP client):"
+echo "$response" | jq .
+
+# Config va data mavjudligini tekshirish
+if echo "$response" | jq -e '.config' >/dev/null && echo "$response" | jq -e '.data' >/dev/null; then
+    echo "VIP client yaratish muvaffaqiyatli o'tdi!"
+    
+    # Config faylini saqlash
+    echo "$response" | jq -r '.config' > vip-client.conf
+    echo "VIP client konfiguratsiyasi 'vip-client.conf' fayliga saqlandi."
+else
+    echo "Xatolik: API javobida 'config' yoki 'data' maydonlari topilmadi."
+    exit 1
+fi
+
+# 3. Barcha clientlarni olish
+echo -e "\n3. GET /api/clients endpointiga so'rov yuborilmoqda..."
 clients_response=$(call_api "GET" "/api/clients")
 echo "Barcha clientlar:"
 echo "$clients_response" | jq .
@@ -63,7 +89,8 @@ if [ -z "$first_client_id" ] || [ "$first_client_id" = "null" ]; then
     exit 1
 fi
 
-echo -e "\n3. GET /api/client/$first_client_id endpointiga so'rov yuborilmoqda..."
+# 4. Birinchi clientni olish
+echo -e "\n4. GET /api/client/$first_client_id endpointiga so'rov yuborilmoqda..."
 client_response=$(call_api "GET" "/api/client/$first_client_id")
 echo "Client ma'lumotlari:"
 echo "$client_response" | jq .
