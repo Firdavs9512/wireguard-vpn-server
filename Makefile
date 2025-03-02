@@ -2,11 +2,11 @@
 
 # Dasturni ishga tushirish
 run:
-	sudo go run main.go
+	sudo go run cmd/server/main.go
 
 # Dasturni build qilish
 build:
-	go build -o wireguard-client-api main.go
+	go build -o wireguard-client-api cmd/server/main.go
 
 # Dasturni build qilib, ishga tushirish
 start: build
