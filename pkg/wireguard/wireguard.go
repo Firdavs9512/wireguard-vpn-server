@@ -397,3 +397,120 @@ func formatBytes(bytes int64) string {
 
 	return fmt.Sprintf("%.2f %s", size, unit)
 }
+
+// ServerStatus - Server holati ma'lumotlari
+type ServerStatus struct {
+	InterfaceName               string    `json:"interface_name"`
+	ListenPort                  int       `json:"listen_port"`
+	PublicKey                   string    `json:"public_key"`
+	PrivateKey                  string    `json:"private_key,omitempty"`
+	ActiveClients               int       `json:"active_clients"`
+	TotalClients                int       `json:"total_clients"`
+	TotalBytesReceived          int64     `json:"total_bytes_received"`
+	TotalBytesSent              int64     `json:"total_bytes_sent"`
+	TotalTraffic                int64     `json:"total_traffic"`
+	LastHandshake               time.Time `json:"last_handshake"`
+	Uptime                      string    `json:"uptime"`
+	TotalBytesReceivedFormatted string    `json:"total_bytes_received_formatted"`
+	TotalBytesSentFormatted     string    `json:"total_bytes_sent_formatted"`
+	TotalTrafficFormatted       string    `json:"total_traffic_formatted"`
+}
+
+// GetServerStatus - Server holatini olish
+func GetServerStatus() (*ServerStatus, error) {
+	// Konfiguratsiyadan interface nomini olish
+	interfaceName := config.Config.Server.Interface
+
+	// Default qiymatni o'rnatish
+	if interfaceName == "" {
+		interfaceName = "wg0"
+	}
+
+	// wg komandasi orqali server ma'lumotlarini olish
+	cmd := exec.Command("wg", "show", interfaceName, "dump")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("server ma'lumotlarini olishda xatolik: %v", err)
+	}
+
+	// Natijani qayta ishlash
+	lines := strings.Split(string(output), "\n")
+	if len(lines) < 1 {
+		return nil, fmt.Errorf("server ma'lumotlari topilmadi")
+	}
+
+	// Server ma'lumotlarini olish (birinchi qator)
+	serverFields := strings.Fields(lines[0])
+	if len(serverFields) < 3 {
+		return nil, fmt.Errorf("server ma'lumotlari formati noto'g'ri")
+	}
+
+	// Server ma'lumotlarini o'zgartirish
+	publicKey := serverFields[1]
+	listenPort, _ := strconv.Atoi(serverFields[2])
+
+	// Barcha clientlar ma'lumotlarini olish
+	var totalBytesReceived, totalBytesSent int64
+	var lastHandshake time.Time
+	activeClients := 0
+
+	// Birinchi qatorni o'tkazib yuborish (interface ma'lumotlari)
+	for i := 1; i < len(lines); i++ {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) >= 7 {
+			// Handshake vaqtini o'zgartirish
+			handshakeUnix, _ := strconv.ParseInt(fields[4], 10, 64)
+			if handshakeUnix > 0 {
+				clientHandshake := time.Unix(handshakeUnix, 0)
+				// Oxirgi handshake vaqtini yangilash
+				if clientHandshake.After(lastHandshake) {
+					lastHandshake = clientHandshake
+				}
+
+				// Aktiv clientlarni hisoblash (oxirgi 3 minut ichida handshake bo'lgan)
+				if time.Since(clientHandshake).Minutes() < 3 {
+					activeClients++
+				}
+			}
+
+			// Traffic ma'lumotlarini qo'shish
+			bytesReceived, _ := strconv.ParseInt(fields[5], 10, 64)
+			bytesSent, _ := strconv.ParseInt(fields[6], 10, 64)
+			totalBytesReceived += bytesReceived
+			totalBytesSent += bytesSent
+		}
+	}
+
+	// Uptime ni olish
+	uptime := "Ma'lumot yo'q"
+	uptimeCmd := exec.Command("uptime", "-p")
+	uptimeOutput, err := uptimeCmd.Output()
+	if err == nil {
+		uptime = strings.TrimSpace(string(uptimeOutput))
+	}
+
+	// Server holati obyektini yaratish
+	status := &ServerStatus{
+		InterfaceName:               interfaceName,
+		ListenPort:                  listenPort,
+		PublicKey:                   publicKey,
+		PrivateKey:                  "", // Xavfsizlik uchun private key ni qaytarmaymiz
+		ActiveClients:               activeClients,
+		TotalClients:                len(lines) - 1, // Birinchi qator server ma'lumotlari
+		TotalBytesReceived:          totalBytesReceived,
+		TotalBytesSent:              totalBytesSent,
+		TotalTraffic:                totalBytesReceived + totalBytesSent,
+		LastHandshake:               lastHandshake,
+		Uptime:                      uptime,
+		TotalBytesReceivedFormatted: formatBytes(totalBytesReceived),
+		TotalBytesSentFormatted:     formatBytes(totalBytesSent),
+		TotalTrafficFormatted:       formatBytes(totalBytesReceived + totalBytesSent),
+	}
+
+	return status, nil
+}

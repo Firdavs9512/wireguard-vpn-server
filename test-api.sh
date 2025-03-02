@@ -6,22 +6,20 @@ echo "Wireguard VPN Client API ni test qilish..."
 
 # Konfiguratsiya faylini o'qish
 CONFIG_FILE="/etc/wireguard/server.yaml"
+
+# Konfiguratsiya fayli mavjudligini tekshirish
 if [ ! -f "$CONFIG_FILE" ]; then
-    echo "Xatolik: Konfiguratsiya fayli topilmadi: $CONFIG_FILE"
-    echo "Avval konfiguratsiya faylini yarating:"
+    echo "Xato: Konfiguratsiya fayli topilmadi: $CONFIG_FILE"
+    echo "Iltimos, avval konfiguratsiya faylini yarating:"
     echo "sudo ./wireguard-client-api --create-config"
     exit 1
 fi
 
-# API token ni olish
-API_TOKEN=$(grep -A 2 "api:" "$CONFIG_FILE" | grep "token:" | awk '{print $2}')
-if [ -z "$API_TOKEN" ]; then
-    echo "Xatolik: API token topilmadi. Konfiguratsiya faylini tekshiring."
-    exit 1
-fi
+# API token va portni konfiguratsiya faylidan olish
+API_TOKEN=$(grep -A1 "token:" "$CONFIG_FILE" | tail -n1 | awk '{print $2}')
+API_PORT=$(grep -A1 "port:" "$CONFIG_FILE" | head -n1 | awk '{print $2}')
 
-# API port ni olish
-API_PORT=$(grep -A 2 "api:" "$CONFIG_FILE" | grep "port:" | awk '{print $2}')
+# Agar port topilmagan bo'lsa, default qiymatni ishlatish
 if [ -z "$API_PORT" ]; then
     API_PORT=8080
 fi
@@ -31,120 +29,93 @@ function call_api() {
     local method=$1
     local endpoint=$2
     local data=$3
-    
+
     if [ -z "$data" ]; then
-        echo "$(curl -s -X $method -H "Authorization: Bearer $API_TOKEN" http://localhost:$API_PORT$endpoint)"
+        curl -s -X "$method" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            "http://localhost:$API_PORT$endpoint"
     else
-        echo "$(curl -s -X $method -H "Content-Type: application/json" -H "Authorization: Bearer $API_TOKEN" -d "$data" http://localhost:$API_PORT$endpoint)"
+        curl -s -X "$method" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -d "$data" \
+            "http://localhost:$API_PORT$endpoint"
     fi
 }
 
-# 1. Normal client yaratish
-echo "1. POST /api/client endpointiga so'rov yuborilmoqda (Normal client)..."
-response=$(call_api "POST" "/api/client" '{"description":"Normal client", "life_time": 2592000, "type": "normal"}')
+echo "=== Wireguard VPN Client API Test ==="
+echo "API port: $API_PORT"
+echo
 
-# Natijani tekshirish
-if [ $? -ne 0 ]; then
-    echo "Xatolik: API ga ulanib bo'lmadi. Server ishga tushirilganligini tekshiring."
-    exit 1
-fi
+# Normal client yaratish
+echo "1. Normal client yaratish..."
+NORMAL_CLIENT=$(call_api "POST" "/api/client" '{"description": "Normal client", "life_time": 2592000, "type": "normal"}')
+echo "$NORMAL_CLIENT" | jq .
+echo
 
-# JSON formatini tekshirish
-if ! echo "$response" | jq . >/dev/null 2>&1; then
-    echo "Xatolik: API javobini JSON formatida qayta ishlab bo'lmadi."
-    echo "Javob: $response"
-    exit 1
-fi
+# Normal client konfiguratsiyasini saqlash
+echo "$NORMAL_CLIENT" | jq -r .config >normal-client.conf
+echo "Normal client konfiguratsiyasi 'normal-client.conf' fayliga saqlandi"
+echo
 
-# Natijani chiroyli ko'rinishda chiqarish
-echo "API javob berdi (Normal client):"
-echo "$response" | jq .
+# VIP client yaratish
+echo "2. VIP client yaratish..."
+VIP_CLIENT=$(call_api "POST" "/api/client" '{"description": "VIP client", "life_time": 31536000, "type": "vip"}')
+echo "$VIP_CLIENT" | jq .
+echo
 
-# Config va data mavjudligini tekshirish
-if echo "$response" | jq -e '.config' >/dev/null && echo "$response" | jq -e '.data' >/dev/null; then
-    echo "Normal client yaratish muvaffaqiyatli o'tdi!"
-    
-    # Config faylini saqlash
-    echo "$response" | jq -r '.config' > normal-client.conf
-    echo "Normal client konfiguratsiyasi 'normal-client.conf' fayliga saqlandi."
-else
-    echo "Xatolik: API javobida 'config' yoki 'data' maydonlari topilmadi."
-    exit 1
-fi
+# VIP client konfiguratsiyasini saqlash
+echo "$VIP_CLIENT" | jq -r .config >vip-client.conf
+echo "VIP client konfiguratsiyasi 'vip-client.conf' fayliga saqlandi"
+echo
 
-# 2. VIP client yaratish
-echo -e "\n2. POST /api/client endpointiga so'rov yuborilmoqda (VIP client)..."
-response=$(call_api "POST" "/api/client" '{"description":"VIP client", "life_time": 31536000, "type": "vip"}')
-
-# Natijani tekshirish
-if [ $? -ne 0 ]; then
-    echo "Xatolik: API ga ulanib bo'lmadi."
-    exit 1
-fi
-
-# Natijani chiroyli ko'rinishda chiqarish
-echo "API javob berdi (VIP client):"
-echo "$response" | jq .
-
-# Config va data mavjudligini tekshirish
-if echo "$response" | jq -e '.config' >/dev/null && echo "$response" | jq -e '.data' >/dev/null; then
-    echo "VIP client yaratish muvaffaqiyatli o'tdi!"
-    
-    # Config faylini saqlash
-    echo "$response" | jq -r '.config' > vip-client.conf
-    echo "VIP client konfiguratsiyasi 'vip-client.conf' fayliga saqlandi."
-else
-    echo "Xatolik: API javobida 'config' yoki 'data' maydonlari topilmadi."
-    exit 1
-fi
-
-# 3. Barcha clientlarni olish
-echo -e "\n3. GET /api/clients endpointiga so'rov yuborilmoqda..."
-clients_response=$(call_api "GET" "/api/clients")
-echo "Barcha clientlar:"
-echo "$clients_response" | jq .
+# Barcha clientlarni olish
+echo "3. Barcha clientlarni olish..."
+CLIENTS=$(call_api "GET" "/api/clients")
+echo "$CLIENTS" | jq .
+echo
 
 # Birinchi clientni olish
-first_client_id=$(echo "$clients_response" | jq '.[0].ID')
-if [ -z "$first_client_id" ] || [ "$first_client_id" = "null" ]; then
-    echo "Xatolik: Clientlar topilmadi."
-    exit 1
-fi
+FIRST_CLIENT_ID=$(echo "$CLIENTS" | jq -r '.[0].ID')
+echo "4. Client ma'lumotlarini olish (ID: $FIRST_CLIENT_ID)..."
+CLIENT=$(call_api "GET" "/api/client/$FIRST_CLIENT_ID")
+echo "$CLIENT" | jq .
+echo
 
-# 4. Birinchi clientni olish
-echo -e "\n4. GET /api/client/$first_client_id endpointiga so'rov yuborilmoqda..."
-client_response=$(call_api "GET" "/api/client/$first_client_id")
-echo "Client ma'lumotlari:"
-echo "$client_response" | jq .
+# Client life_time vaqtini olish
+echo "5. Client life_time vaqtini olish (ID: $FIRST_CLIENT_ID)..."
+CLIENT_LIFETIME=$(call_api "GET" "/api/client/$FIRST_CLIENT_ID/lifetime")
+echo "$CLIENT_LIFETIME" | jq .
+echo
 
-# 5. Client life_time vaqtini olish
-echo -e "\n5. GET /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda..."
-lifetime_response=$(call_api "GET" "/api/client/$first_client_id/lifetime")
-echo "Client life_time ma'lumotlari:"
-echo "$lifetime_response" | jq .
+# Client life_time vaqtini yangilash
+echo "6. Client life_time vaqtini yangilash (ID: $FIRST_CLIENT_ID)..."
+UPDATED_LIFETIME=$(call_api "PUT" "/api/client/$FIRST_CLIENT_ID/lifetime" '{"life_time": 604800}')
+echo "$UPDATED_LIFETIME" | jq .
+echo
 
-# 6. Client life_time vaqtini yangilash
-echo -e "\n6. PUT /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda..."
-updated_lifetime_response=$(call_api "PUT" "/api/client/$first_client_id/lifetime" '{"life_time": 604800}')
-echo "Yangilangan client life_time ma'lumotlari (1 hafta = 604800 soniya):"
-echo "$updated_lifetime_response" | jq .
+# Client traffic ma'lumotlarini olish
+echo "7. Client traffic ma'lumotlarini olish (ID: $FIRST_CLIENT_ID)..."
+CLIENT_TRAFFIC=$(call_api "GET" "/api/client/$FIRST_CLIENT_ID/traffic")
+echo "$CLIENT_TRAFFIC" | jq .
+echo
 
-# 7. Yangilangan life_time ni tekshirish
-echo -e "\n7. GET /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda (tekshirish uchun)..."
-check_lifetime_response=$(call_api "GET" "/api/client/$first_client_id/lifetime")
-echo "Yangilangan client life_time ma'lumotlari (tekshirish):"
-echo "$check_lifetime_response" | jq .
+# Barcha clientlar traffic ma'lumotlarini olish
+echo "8. Barcha clientlar traffic ma'lumotlarini olish..."
+ALL_CLIENTS_TRAFFIC=$(call_api "GET" "/api/clients/traffic")
+echo "$ALL_CLIENTS_TRAFFIC" | jq .
+echo
 
-# 8. Client traffic ma'lumotlarini olish
-echo -e "\n8. GET /api/client/$first_client_id/traffic endpointiga so'rov yuborilmoqda..."
-traffic_response=$(call_api "GET" "/api/client/$first_client_id/traffic")
-echo "Client traffic ma'lumotlari:"
-echo "$traffic_response" | jq .
+# Server holatini olish
+echo "9. Server holatini olish..."
+SERVER_STATUS=$(call_api "GET" "/api/server/status")
+echo "$SERVER_STATUS" | jq .
+echo
 
-# 9. Barcha clientlar traffic ma'lumotlarini olish
-echo -e "\n9. GET /api/clients/traffic endpointiga so'rov yuborilmoqda..."
-all_traffic_response=$(call_api "GET" "/api/clients/traffic")
-echo "Barcha clientlar traffic ma'lumotlari:"
-echo "$all_traffic_response" | jq .
+echo "10. Health holatini olish..."
+HEALTH=$(call_api "GET" "/api/health")
+echo "$HEALTH" | jq .
+echo
 
-echo -e "\nBarcha testlar muvaffaqiyatli o'tdi!" 
+echo "=== Test yakunlandi ==="

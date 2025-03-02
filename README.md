@@ -12,6 +12,7 @@ Bu loyiha Golang yordamida Wireguard VPN clientlarini yaratish uchun API server 
 - Clientlarni ko'rish, o'chirish va boshqarish uchun API endpointlar
 - Client life_time vaqtini olish va yangilash uchun API endpointlar
 - Client traffic ma'lumotlarini olish uchun API endpointlar
+- Server holati va statistikasini olish uchun API endpoint
 
 ## Talablar
 
@@ -54,20 +55,20 @@ Konfiguratsiya fayli formati:
 
 ```yaml
 server:
-  ip: 192.168.1.1        # Server IP manzili
-  port: 51820            # Wireguard port
-  interface: wg0         # Wireguard interface nomi
-  debug: false           # Debug rejimi
+  ip: 192.168.1.1 # Server IP manzili
+  port: 51820 # Wireguard port
+  interface: wg0 # Wireguard interface nomi
+  debug: false # Debug rejimi
 api:
-  port: 8080             # API port
-  token: secure-token    # API token (xavfsizlik uchun o'zgartiring)
+  port: 8080 # API port
+  token: secure-token # API token (xavfsizlik uchun o'zgartiring)
 wireguard:
-  dns: 1.1.1.1, 8.8.8.8  # DNS serverlari
-  allowed_ips: 0.0.0.0/0, ::/0  # Ruxsat berilgan IP manzillar
-  persistent_keepalive: 25      # Persistent keepalive vaqti
-  server_public_key_path: /etc/wireguard/server_public.key  # Server public key fayli
+  dns: 1.1.1.1, 8.8.8.8 # DNS serverlari
+  allowed_ips: 0.0.0.0/0, ::/0 # Ruxsat berilgan IP manzillar
+  persistent_keepalive: 25 # Persistent keepalive vaqti
+  server_public_key_path: /etc/wireguard/server_public.key # Server public key fayli
 database:
-  path: ./data/wireguard.db  # Database fayli yo'li
+  path: ./data/wireguard.db # Database fayli yo'li
 ```
 
 ## Makefile buyruqlari
@@ -349,6 +350,68 @@ GET /api/clients/traffic
 ]
 ```
 
+### Server holatini olish
+
+**So'rov:**
+
+```
+GET /api/server/status
+```
+
+**Javob:**
+
+```json
+{
+  "server": {
+    "interface_name": "wg0",
+    "listen_port": 51820,
+    "public_key": "server_public_key",
+    "active_clients": 2,
+    "total_clients": 5,
+    "total_bytes_received": 3145728,
+    "total_bytes_sent": 1572864,
+    "total_traffic": 4718592,
+    "last_handshake": "2023-12-01T13:15:30Z",
+    "uptime": "up 10 days, 5 hours, 30 minutes",
+    "total_bytes_received_formatted": "3.00 MB",
+    "total_bytes_sent_formatted": "1.50 MB",
+    "total_traffic_formatted": "4.50 MB"
+  },
+  "database": {
+    "total_clients": 5,
+    "active_clients": 2,
+    "inactive_clients": 3
+  },
+  "system": {
+    "uptime": "up 10 days, 5 hours, 30 minutes"
+  },
+  "traffic": {
+    "total_bytes_received": 3145728,
+    "total_bytes_sent": 1572864,
+    "total_traffic": 4718592,
+    "total_bytes_received_formatted": "3.00 MB",
+    "total_bytes_sent_formatted": "1.50 MB",
+    "total_traffic_formatted": "4.50 MB"
+  }
+}
+```
+
+### Server health holatini olish
+
+**So'rov:**
+
+```
+GET /api/health
+```
+
+**Javob:**
+
+```json
+{
+  "status": "ok"
+}
+```
+
 ## Texnik tafsilotlar
 
 - Server konfiguratsiyasiga yangi peerlar `wg` va `wg-quick` buyruqlari orqali qo'shiladi
@@ -374,6 +437,14 @@ GET /api/clients/traffic
   - Client endpoint (IP manzil va port)
   - Odam o'qiy oladigan formatdagi ma'lumotlar (MB, GB kabi)
   - Umumiy traffic (qabul qilingan + yuborilgan)
+- Server holati API endpointi quyidagi ma'lumotlarni taqdim etadi:
+  - Server interfeysi nomi va port raqami
+  - Server public key
+  - Aktiv va umumiy clientlar soni
+  - Umumiy qabul qilingan va yuborilgan traffic
+  - Oxirgi handshake vaqti
+  - Server uptime (ishga tushirilgan vaqtdan beri o'tgan vaqt)
+  - Databasedagi clientlar statistikasi
 
 ## Xavfsizlik
 
@@ -402,10 +473,10 @@ IP bloklash tizimi konfiguratsiyasi:
 ```yaml
 security:
   ip_blocker:
-    enabled: true                    # IP bloklash tizimini yoqish/o'chirish
-    max_attempts: 3                  # Maksimal urinishlar soni
-    block_duration: 60               # Bloklash muddati (minutlarda)
-    log_file_path: "./logs/auth_failures.log"  # Log fayli yo'li
+    enabled: true # IP bloklash tizimini yoqish/o'chirish
+    max_attempts: 3 # Maksimal urinishlar soni
+    block_duration: 60 # Bloklash muddati (minutlarda)
+    log_file_path: "./logs/auth_failures.log" # Log fayli yo'li
 ```
 
-Standart konfiguratsiyada, 3 marta xato token bilan so'rov yuborgan IP manzil 1 soatga bloklanadi. 
+Standart konfiguratsiyada, 3 marta xato token bilan so'rov yuborgan IP manzil 1 soatga bloklanadi.

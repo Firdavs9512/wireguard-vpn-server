@@ -140,6 +140,10 @@ func SetupRouter() *gin.Engine {
 	api.GET("/client/:id/traffic", GetClientTrafficHandler)
 	api.GET("/clients/traffic", GetAllClientsTrafficHandler)
 
+	// Server holati API endpointi
+	api.GET("/server/status", GetServerStatusHandler)
+	api.GET("/health", GetHealthHandler)
+
 	return r
 }
 
@@ -509,4 +513,46 @@ func formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// GetServerStatusHandler - Server holatini olish uchun handler
+func GetServerStatusHandler(c *gin.Context) {
+	// Server holatini olish
+	status, err := wireguard.GetServerStatus()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Server holatini olishda xatolik: %v", err)})
+		return
+	}
+
+	// Databasedan clientlar sonini olish
+	clients, err := database.GetAllClients()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Clientlarni olishda xatolik: %v", err)})
+		return
+	}
+
+	// Natijani qaytarish
+	c.JSON(http.StatusOK, gin.H{
+		"server": status,
+		"database": gin.H{
+			"total_clients":    len(clients),
+			"active_clients":   status.ActiveClients,
+			"inactive_clients": len(clients) - status.ActiveClients,
+		},
+		"system": gin.H{
+			"uptime": status.Uptime,
+		},
+		"traffic": gin.H{
+			"total_bytes_received":           status.TotalBytesReceived,
+			"total_bytes_sent":               status.TotalBytesSent,
+			"total_traffic":                  status.TotalTraffic,
+			"total_bytes_received_formatted": status.TotalBytesReceivedFormatted,
+			"total_bytes_sent_formatted":     status.TotalBytesSentFormatted,
+			"total_traffic_formatted":        status.TotalTrafficFormatted,
+		},
+	})
+}
+
+func GetHealthHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
