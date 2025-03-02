@@ -72,7 +72,25 @@ func CreateClientHandler(c *gin.Context) {
 	}
 
 	// Client IP manzilini yaratish
-	clientIP := wireguard.GenerateClientIP(request.Type)
+	// Databasedagi ishlatilayotgan IP manzillarni olish
+	var subnetPrefix string
+	if request.Type == models.ClientTypeVIP {
+		subnetPrefix = "10.77."
+	} else {
+		subnetPrefix = "10.7."
+	}
+
+	usedIPs, err := database.GetUsedIPAddresses(subnetPrefix)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "IP manzillarni olishda xatolik: " + err.Error()})
+		return
+	}
+
+	clientIP, err := wireguard.FindAvailableIP(request.Type, usedIPs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Bo'sh IP manzil topilmadi: " + err.Error()})
+		return
+	}
 
 	// Client konfiguratsiyasini yaratish
 	configText, configData := wireguard.CreateClientConfig(clientPrivateKey, presharedKey, clientIP, serverPublicKey)

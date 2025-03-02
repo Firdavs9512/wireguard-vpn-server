@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gorm.io/driver/sqlite"
@@ -128,4 +129,25 @@ func DeleteExpiredClients() error {
 	}
 
 	return nil
+}
+
+// GetUsedIPAddresses - Ishlatilayotgan IP manzillarni olish
+func GetUsedIPAddresses(subnetPrefix string) ([]string, error) {
+	var clients []models.WireguardClient
+	var addresses []string
+
+	// Berilgan subnet prefixga mos IP manzillarni olish
+	err := DB.Where("address LIKE ?", subnetPrefix+"%").Find(&clients).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// IP manzillarni saqlash
+	for _, client := range clients {
+		// CIDR notatsiyasini olib tashlash (/32)
+		ipWithoutCIDR := strings.Split(client.Address, "/")[0]
+		addresses = append(addresses, ipWithoutCIDR)
+	}
+
+	return addresses, nil
 }

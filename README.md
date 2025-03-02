@@ -186,6 +186,8 @@ DELETE /api/client/:id
 - Client turiga qarab IP manzil generatsiya qilinadi:
   - Normal clientlar uchun: 10.7.x.x subnet
   - VIP clientlar uchun: 10.77.x.x subnet
+- IP manzillar databasedagi mavjud manzillarni tekshirib, bo'sh manzilni topish orqali belgilanadi
+- O'chirilgan clientlarning IP manzillari yangi clientlar uchun qayta ishlatilishi mumkin
 - Client ma'lumotlari SQLite databaseda saqlanadi (`./data/wireguard.db`)
 - Database GORM ORM orqali boshqariladi
 - Clientlar uchun "normal" va "vip" turlari mavjud

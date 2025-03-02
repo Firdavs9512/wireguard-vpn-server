@@ -2,11 +2,10 @@ package wireguard
 
 import (
 	"fmt"
-	"math/rand"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"wireguard-vpn-client-creater/pkg/config"
 	"wireguard-vpn-client-creater/pkg/models"
@@ -51,18 +50,41 @@ func GenerateKeyPair() (string, string, error) {
 	return privateKey, publicKey, nil
 }
 
-// GenerateClientIP - Yangi IP manzil yaratish
-func GenerateClientIP(clientType models.ClientType) string {
-	rand.Seed(time.Now().UnixNano())
+// FindAvailableIP - Bo'sh IP manzilni topish
+func FindAvailableIP(clientType models.ClientType, usedIPs []string) (string, error) {
+	var subnetPrefix string
 
 	// Client turiga qarab subnet tanlash
 	if clientType == models.ClientTypeVIP {
 		// VIP clientlar uchun 10.77.x.x subnet
-		return fmt.Sprintf("10.77.%d.%d/32", rand.Intn(250)+1, rand.Intn(250)+2) // 10.77.1-250.2-251
+		subnetPrefix = "10.77."
 	} else {
 		// Normal clientlar uchun 10.7.x.x subnet
-		return fmt.Sprintf("10.7.%d.%d/32", rand.Intn(250)+1, rand.Intn(250)+2) // 10.7.1-250.2-251
+		subnetPrefix = "10.7."
 	}
+
+	// IP manzillarni map ga o'tkazish (tezroq qidirish uchun)
+	usedIPMap := make(map[string]bool)
+	for _, ip := range usedIPs {
+		usedIPMap[ip] = true
+	}
+
+	// Bo'sh IP manzilni topish
+	// Avval 10.x.0.2 dan 10.x.0.251 gacha tekshirish
+	for thirdOctet := 0; thirdOctet <= 255; thirdOctet++ {
+		for fourthOctet := 2; fourthOctet <= 251; fourthOctet++ {
+			candidateIP := fmt.Sprintf("%s%d.%d", subnetPrefix, thirdOctet, fourthOctet)
+
+			// Agar bu IP manzil ishlatilmayotgan bo'lsa, uni qaytarish
+			if !usedIPMap[candidateIP] {
+				log.Printf("Yangi IP manzil yaratildi: %s", candidateIP)
+				return candidateIP + "/32", nil
+			}
+		}
+	}
+
+	// Agar barcha IP manzillar band bo'lsa, xatolik qaytarish
+	return "", fmt.Errorf("bo'sh IP manzil topilmadi")
 }
 
 // CreateClientConfig - Wireguard client konfiguratsiyasini yaratish
