@@ -181,8 +181,8 @@ func DeleteClientHandler(c *gin.Context) {
 		return
 	}
 
-	// Databasedan o'chirish
-	if err := database.DB.Delete(&client).Error; err != nil {
+	// Databasedan to'liq o'chirish (hard delete)
+	if err := database.DB.Unscoped().Delete(&client).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Clientni databasedan o'chirishda xatolik: " + err.Error()})
 		return
 	}

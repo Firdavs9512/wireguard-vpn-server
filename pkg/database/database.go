@@ -119,8 +119,8 @@ func DeleteExpiredClients() error {
 			continue
 		}
 
-		// Databasedan o'chirish
-		if err := DB.Delete(&client).Error; err != nil {
+		// Databasedan to'liq o'chirish (hard delete)
+		if err := DB.Unscoped().Delete(&client).Error; err != nil {
 			log.Printf("Xatolik: Databasedan client %d ni o'chirishda: %v", client.ID, err)
 			continue
 		}
@@ -137,7 +137,8 @@ func GetUsedIPAddresses(subnetPrefix string) ([]string, error) {
 	var addresses []string
 
 	// Berilgan subnet prefixga mos IP manzillarni olish
-	err := DB.Where("address LIKE ?", subnetPrefix+"%").Find(&clients).Error
+	// Unscoped() orqali o'chirilgan clientlarni ham qo'shib olish
+	err := DB.Unscoped().Where("address LIKE ?", subnetPrefix+"%").Find(&clients).Error
 	if err != nil {
 		return nil, err
 	}
