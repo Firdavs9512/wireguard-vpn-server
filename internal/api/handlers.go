@@ -27,6 +27,12 @@ func SetupRouter() *gin.Engine {
 	// Clientni o'chirish
 	r.DELETE("/api/client/:id", DeleteClientHandler)
 
+	// Client life_time vaqtini olish
+	r.GET("/api/client/:id/lifetime", GetClientLifetimeHandler)
+
+	// Client life_time vaqtini yangilash
+	r.PUT("/api/client/:id/lifetime", UpdateClientLifetimeHandler)
+
 	return r
 }
 
@@ -188,4 +194,91 @@ func DeleteClientHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Client muvaffaqiyatli o'chirildi"})
+}
+
+// GetClientLifetimeHandler - Client life_time vaqtini olish uchun handler
+func GetClientLifetimeHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var client models.WireguardClient
+	if err := database.DB.First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Client topilmadi"})
+		return
+	}
+
+	// Client life_time va qolgan vaqtni hisoblash
+	var remainingTime int64 = 0
+	if client.ExpiresAt != nil {
+		// Qolgan vaqtni soniyalarda hisoblash
+		remainingTime = client.ExpiresAt.Unix() - time.Now().Unix()
+		if remainingTime < 0 {
+			remainingTime = 0
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":             client.ID,
+		"description":    client.Description,
+		"type":           client.Type,
+		"life_time":      client.LifeTime,
+		"expires_at":     client.ExpiresAt,
+		"remaining_time": remainingTime,
+	})
+}
+
+// UpdateClientLifetimeHandler - Client life_time vaqtini yangilash uchun handler
+func UpdateClientLifetimeHandler(c *gin.Context) {
+	id := c.Param("id")
+
+	var client models.WireguardClient
+	if err := database.DB.First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Client topilmadi"})
+		return
+	}
+
+	// Requestdan yangi life_time ni olish
+	var request struct {
+		LifeTime int `json:"life_time"` // Soniya, 0 = cheksiz
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Noto'g'ri so'rov formati"})
+		return
+	}
+
+	// Yangi ExpiresAt ni hisoblash
+	var expiresAt *time.Time
+	if request.LifeTime > 0 {
+		expiry := time.Now().Add(time.Duration(request.LifeTime) * time.Second)
+		expiresAt = &expiry
+	} else {
+		expiresAt = nil // Cheksiz muddat
+	}
+
+	// Clientni yangilash
+	client.LifeTime = request.LifeTime
+	client.ExpiresAt = expiresAt
+
+	if err := database.UpdateClient(&client); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Clientni yangilashda xatolik: " + err.Error()})
+		return
+	}
+
+	// Qolgan vaqtni hisoblash
+	var remainingTime int64 = 0
+	if client.ExpiresAt != nil {
+		remainingTime = client.ExpiresAt.Unix() - time.Now().Unix()
+		if remainingTime < 0 {
+			remainingTime = 0
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":             client.ID,
+		"description":    client.Description,
+		"type":           client.Type,
+		"life_time":      client.LifeTime,
+		"expires_at":     client.ExpiresAt,
+		"remaining_time": remainingTime,
+		"message":        "Client life_time vaqti muvaffaqiyatli yangilandi",
+	})
 }

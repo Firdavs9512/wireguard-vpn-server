@@ -95,4 +95,22 @@ client_response=$(call_api "GET" "/api/client/$first_client_id")
 echo "Client ma'lumotlari:"
 echo "$client_response" | jq .
 
+# 5. Client life_time vaqtini olish
+echo -e "\n5. GET /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda..."
+lifetime_response=$(call_api "GET" "/api/client/$first_client_id/lifetime")
+echo "Client life_time ma'lumotlari:"
+echo "$lifetime_response" | jq .
+
+# 6. Client life_time vaqtini yangilash
+echo -e "\n6. PUT /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda..."
+updated_lifetime_response=$(call_api "PUT" "/api/client/$first_client_id/lifetime" '{"life_time": 604800}')
+echo "Yangilangan client life_time ma'lumotlari (1 hafta = 604800 soniya):"
+echo "$updated_lifetime_response" | jq .
+
+# 7. Yangilangan life_time ni tekshirish
+echo -e "\n7. GET /api/client/$first_client_id/lifetime endpointiga so'rov yuborilmoqda (tekshirish uchun)..."
+check_lifetime_response=$(call_api "GET" "/api/client/$first_client_id/lifetime")
+echo "Yangilangan client life_time ma'lumotlari (tekshirish):"
+echo "$check_lifetime_response" | jq .
+
 echo -e "\nBarcha testlar muvaffaqiyatli o'tdi!" 

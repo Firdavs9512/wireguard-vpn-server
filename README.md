@@ -10,6 +10,7 @@ Bu loyiha Golang yordamida Wireguard VPN clientlarini yaratish uchun API server 
 - Server konfiguratsiyasiga yangi peerlarni avtomatik qo'shish
 - Clientlarni SQLite databasega saqlash va boshqarish
 - Clientlarni ko'rish, o'chirish va boshqarish uchun API endpointlar
+- Client life_time vaqtini olish va yangilash uchun API endpointlar
 
 ## Talablar
 
@@ -180,6 +181,57 @@ DELETE /api/client/:id
 }
 ```
 
+### Client life_time vaqtini olish
+
+**So'rov:**
+
+```
+GET /api/client/:id/lifetime
+```
+
+**Javob:**
+
+```json
+{
+  "id": 1,
+  "description": "Normal client",
+  "type": "normal",
+  "life_time": 2592000,
+  "expires_at": "2023-12-31T23:59:59Z",
+  "remaining_time": 2591000
+}
+```
+
+### Client life_time vaqtini yangilash
+
+**So'rov:**
+
+```
+PUT /api/client/:id/lifetime
+```
+
+**Request body:**
+
+```json
+{
+  "life_time": 604800
+}
+```
+
+**Javob:**
+
+```json
+{
+  "id": 1,
+  "description": "Normal client",
+  "type": "normal",
+  "life_time": 604800,
+  "expires_at": "2023-12-08T12:00:00Z",
+  "remaining_time": 604800,
+  "message": "Client life_time vaqti muvaffaqiyatli yangilandi"
+}
+```
+
 ## Texnik tafsilotlar
 
 - Server konfiguratsiyasiga yangi peerlar `wg` va `wg-quick` buyruqlari orqali qo'shiladi
@@ -194,6 +246,7 @@ DELETE /api/client/:id
 - Clientlar uchun amal qilish muddati belgilanishi mumkin (soniyalarda)
 - Muddati o'tgan clientlar avtomatik ravishda o'chiriladi va Wireguard konfiguratsiyasidan olib tashlanadi
 - Muddati o'tgan clientlarni tekshirish har 15 daqiqada amalga oshiriladi
+- Client life_time vaqtini olish va yangilash uchun maxsus API endpointlar mavjud
 
 ## Xavfsizlik eslatmasi
 
