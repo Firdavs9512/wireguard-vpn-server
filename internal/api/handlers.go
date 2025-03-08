@@ -225,6 +225,9 @@ func CreateClientHandler(c *gin.Context) {
 		Active:       true,
 		Type:         clientType,
 		LifeTime:     req.LifeTime,
+		Endpoint:     fmt.Sprintf("%s:%d", config.Config.Server.IP, config.Config.Server.Port),
+		DNS:          config.Config.Wireguard.DNS,
+		AllowedIPs:   config.Config.Wireguard.AllowedIPs,
 	}
 
 	// ExpiresAt ni hisoblash
